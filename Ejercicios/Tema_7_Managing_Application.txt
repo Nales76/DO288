@@ -1,0 +1,366 @@
+=========================
+TEMA 7 - MANAGING APPLICATION DEPLOYMENTS
+=========================
+
+----------
+GUIDED 1 - Activating Probes
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab probes start
+
+
+1.- Deploy Application
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-probes
+[student@workstation ~]$ oc new-app --as-deployment-config  --name probes --build-env  npm_config_registry=http://${RHT_OCP4_NEXUS_SERVER}/repository/nodejs  nodejs:12~https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps --context-dir probes
+
+[student@workstation ~]$ oc logs -f bc/probes
+[student@workstation ~]$ oc get pods
+
+
+2.-Expose Service
+--------
+[student@workstation ~]$ oc expose svc probes
+[student@workstation ~]$ curl  -i probes-${RHT_OCP4_DEV_USER}-probes.${RHT_OCP4_WILDCARD_DOMAIN}/ready
+[student@workstation ~]$ curl  -i probes-${RHT_OCP4_DEV_USER}-probes.${RHT_OCP4_WILDCARD_DOMAIN}/healthz
+[student@workstation ~]$ curl  probes-${RHT_OCP4_DEV_USER}-probes.${RHT_OCP4_WILDCARD_DOMAIN}
+
+3.- Activa Probes + Verify
+--------
+[student@workstation ~]$ oc set probe dc/probes --liveness  --get-url=http://:8080/healthz  --initial-delay-seconds=2 --timeout-seconds=2
+[student@workstation ~]$ oc set probe dc/probes --readiness  --get-url=http://:8080/ready  --initial-delay-seconds=2 --timeout-seconds=2
+[student@workstation DO288-apps]$ oc describe dc/probes
+[student@workstation DO288-apps]$ oc get pods
+[student@workstation DO288-apps]$ oc get pods
+[student@workstation ~]$ oc logs -f dc/probes
+
+4.- Check Probes + Restart
+--------
+[student@workstation ~]$ ~/DO288/labs/probes/kill.sh
+[student@workstation ~]$ oc logs -f dc/probes
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ oc logs -f dc/probes
+
+5.- Descripe Probe
+--------
+[student@workstation ~]$ oc describe pod/probes-3-ltkkp
+
+6.- Delete project
+--------
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-probes
+
+7.- Finish
+--------
+[student@workstation ~]$ lab probes finish
+
+----------
+GUIDED 2 - Implementing a Deployment Strategy
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab strategy start
+
+1.- Create Project + Deploy Application
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-strategy
+[student@workstation ~]$ oc new-app --as-deployment-config --name mysql  -e MYSQL_USER=test -e MYSQL_PASSWORD=redhat -e MYSQL_DATABASE=testdb  --docker-image registry.access.redhat.com/rhscl/mysql-57-rhel7 
+[student@workstation ~]$ oc get pods
+
+2.- Set Triggers
+--------
+[student@workstation ~]$ oc get dc/mysql -o jsonpath='{.spec.strategy.type}{"\n"}'
+[student@workstation ~]$ oc set triggers dc/mysql --from-config --remove
+[student@workstation ~]$ oc patch dc/mysql --patch  '{"spec":{"strategy":{"type":"Recreate"}}}'
+[student@workstation ~]$ oc patch dc/mysql --type=json  -p='[{"op":"remove", "path": "/spec/strategy/rollingParams"}]'
+
+3.- Verify database query
+--------
+[student@workstation ~]$ vim ~/DO288/labs/strategy/users.sql
+........
+CREATE TABLE IF NOT EXISTS users (
+ user_id int(10) unsigned NOT NULL AUTO_INCREMENT,
+ name varchar(100) NOT NULL,
+ email varchar(100) NOT NULL,
+ PRIMARY KEY (user_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+insert into users(name,email) values ('user1', 'user1@example.com');
+insert into users(name,email) values ('user2', 'user2@example.com');
+insert into users(name,email) values ('user3', 'user3@example.com');
+......
+
+[student@workstation ~]$ vim ~/DO288/labs/strategy/import.sh
+......
+#!/bin/bash
+...output omitted...
+
+echo 'Downloading SQL script that initializes the database...'
+curl -s -O https://github.com/RedHatTraining/DO288-apps/releases/download/
+OCP-4.1-1/users.sql
+
+echo "Trying $HOOK_RETRIES times, sleeping $HOOK_SLEEP sec between tries:"
+while [ "$HOOK_RETRIES" != 0 ]; do
+
+ echo -n 'Checking if MySQL is up...'
+ if mysqlshow -h$MYSQL_SERVICE_HOST -u$MYSQL_USER -p$MYSQL_PASSWORD -P3306
+ $MYSQL_DATABASE &>/dev/null
+ then
+ echo 'Database is up'
+ break
+ else
+ echo 'Database is down'
+
+ # Sleep to wait for the MySQL pod to be ready
+ sleep $HOOK_SLEEP
+ fi
+
+ let HOOK_RETRIES=HOOK_RETRIES-1
+done
+
+if [ "$HOOK_RETRIES" = 0 ]; then
+ echo 'Too many tries, giving up'
+ exit 1
+fi
+
+# Run the SQL script
+if mysql -h$MYSQL_SERVICE_HOST -u$MYSQL_USER -p$MYSQL_PASSWORD -P3306
+ $MYSQL_DATABASE < /tmp/users.sql
+then
+ echo 'Database initialized successfully'
+else
+ echo 'Failed to initialize database'
+ exit 2
+fi
+......
+
+[student@workstation ~]$ cat ~/DO288/labs/strategy/post-hook.sh
+.......
+
+...output omitted...
+oc patch dc/mysql --patch \
+'{"spec":{"strategy":{"recreateParams":{"post":{"failurePolicy":
+ "Abort","execNewPod":{"containerName":"mysql","command":["/bin/sh","-c","curl
+ -L -s https://github.com/RedHatTraining/DO288-apps/releases/download/OCP-4.1-1/
+import.sh -o /tmp/import.sh&&chmod 755 /tmp/import.sh&&/tmp/import.sh"]}}}}}}'
+......
+
+[student@workstation ~]$ ~/DO288/labs/strategy/post-hook.sh
+
+
+4.- Watch deployment
+--------
+[student@workstation ~]$ oc describe dc/mysql | grep -A 3 'Strategy:'
+[student@workstation ~]$ oc rollout latest dc/mysql
+
+----> Terminal 1
+[student@workstation ~]$ watch -n 2 oc get pods
+
+----> Terminal 2
+[student@workstation ~]$ watch -n 2 oc get pods
+
+5.- Verify Hooks
+--------
+[student@workstation ~]$ oc logs mysql-2-hook-post
+[student@workstation ~]$ oc set env dc/mysql HOOK_RETRIES=5
+[student@workstation ~]$ oc rollout latest dc/mysql
+[student@workstation ~]$ watch -n 2 oc get pods
+[student@workstation ~]$ oc logs -f mysql-3-hook-post
+
+6.- Verify modification in the database 
+--------
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ oc rsh mysql-3-3p4m1
+sh-4.2$ mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE
+mysql> select * from users;
+mysql> exit
+Bye
+sh-4.2$ exit
+
+7.- Delete project 
+--------
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-strategy
+
+8.- Finish
+--------
+[student@workstation ~]$ lab strategy finish
+
+----------
+GUIDED 3 - Managing Application Deployments
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab app-deploy start
+
+1.- Create new branch
+--------
+[student@workstation ~]$ cd DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+[student@workstation DO288-apps]$ git checkout -b app-deploy
+[student@workstation DO288-apps]$ git push -u origin app-deploy
+[student@workstation DO288-apps]$ cat ~/DO288-apps/quip/src/main/java/com/redhat/training/example/Quip.java
+.......
+...output omitted...
+@Path("/")
+public class Quip {
+
+@GET
+@Produces("text/plain")
+public Response index() throws Exception {
+ String host = InetAddress.getLocalHost().getHostName();
+ return Response.ok("Veni, vidi, vici...\n").build();  -------> 1)
+ }
+
+@GET
+@Path("/ready")
+@Produces("text/plain")
+public Response ready() throws Exception {
+ return Response.ok("OK\n").build(); -------------------------> 2)
+ }
+...output omitted...
+
+2.- Create Project + Deploy Application
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER} -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-app-deploy
+[student@workstation ~]$ oc new-app --as-deployment-config --name quip --build-env MAVEN_MIRROR_URL=http://${RHT_OCP4_NEXUS_SERVER}/repository/java  -i redhat-openjdk18-openshift:1.5  https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps#app-deploy  --context-dir quip
+[student@workstation ~]$ oc logs -f bc/quip
+[student@workstation ~]$ oc get pods
+
+3.- Expose Service + Test
+--------
+[student@workstation ~]$ oc logs dc/quip
+[student@workstation ~]$ oc describe svc/quip
+[student@workstation ~]$ oc expose svc quip
+[student@workstation ~]$ oc get route/quip  -o jsonpath='{.spec.host}{"\n"}'
+[student@workstation ~]$ curl http://quip-${RHT_OCP4_DEV_USER}-app-deploy.${RHT_OCP4_WILDCARD_DOMAIN}
+
+4.- Set Probes
+--------
+[student@workstation ~]$ oc set probe dc/quip --liveness  --get-url=http://:8080/ready  --initial-delay-seconds=30 --timeout-seconds=2
+[student@workstation ~]$ oc set probe dc/quip --readiness  --get-url=http://:8080/ready  --initial-delay-seconds=30 --timeout-seconds=2
+[student@workstation ~]$ oc describe dc/quip
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ oc describe pod quip-3-hppqxi | grep http-get
+[student@workstation ~]$ curl http://quip-${RHT_OCP4_DEV_USER}-app-deploy.${RHT_OCP4_WILDCARD_DOMAIN}
+
+5.- Change application
+--------
+[student@workstation ~$ cat ~/DO288/labs/app-deploy/app-change.sh
+.....
+#!/bin/bash
+echo "Changing quip to english..."
+sed -i 's/Veni, vidi, vici/I came, I saw, I conquered/g' \
+/home/student/DO288-apps/quip/src/main/java/com/redhat/training/example/Quip.java
+
+echo "Committing the changes..."
+cd /home/student/DO288-apps/quip
+git commit -a -m "Changed quip lang to english"
+
+echo "Pushing changes to classroom Git repository..."
+git push
+cd ~
+.....
+
+[student@workstation ~]$ ~/DO288/labs/app-deploy/app-change.sh
+[student@workstation ~]$ oc start-build quip -F
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ curl  http://quip-${RHT_OCP4_DEV_USER}-app-deploy.${RHT_OCP4_WILDCARD_DOMAIN}
+
+6.- Rollback
+--------
+[student@workstation ~]$ oc rollback dc/quip
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ curl  http://quip-${RHT_OCP4_DEV_USER}-app-deploy.${RHT_OCP4_WILDCARD_DOMAIN}
+[student@workstation ~]$ oc rollout latest dc/quip
+
+7.- Delete project
+--------
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-app-deploy
+
+8.- Finish
+--------
+[student@workstation ~]$ lab app-deploy finish
+
+
+----------
+LAB - Managing Application Deployments
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab manage-deploy start
+
+
+1.- Set Master Branch
+--------
+[student@workstation ~]$ cd DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+
+2.- Create new Branch
+--------
+[student@workstation DO288-apps]$ git checkout -b manage-deploy
+[student@workstation DO288-apps]$ git push -u origin manage-deploy
+
+3.- Create Project + Deploy Application
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-manage-deploy 
+[student@workstation ~]$ oc new-app --as-deployment-config  --name scale  php:7.3~https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps#manage-deploy --context-dir php-scale
+[student@workstation ~]$ oc expose svc scale hostname=scale-${RHT_OCP4_DEV_USER}-manage-deploy.${RHT_OCP4_WILDCARD_DOMAIN}
+[student@workstation ~]$ oc get route
+[student@workstation ~]$ curl scale-${RHT_OCP4_DEV_USER}-manage-deploy.${RHT_OCP4_WILDCARD_DOMAIN}
+
+4.- Verify rolling strategy
+--------
+[student@workstation ~]$ oc get dc/scale -o jsonpath='{.spec.strategy.type}{"\n"}'
+
+5.- Scale Application on Web 
+--------
+[student@workstation ~]$ oc get route -n openshift-console
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Project -> Scale
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Workloads -> DeploymentConfig -> Edit Pod Count -> 2
+[student@workstation ~]$ curl scale-${RHT_OCP4_DEV_USER}-manage-deploy.${RHT_OCP4_WILDCARD_DOMAIN}
+[student@workstation ~]$ curl scale-${RHT_OCP4_DEV_USER}-manage-deploy.${RHT_OCP4_WILDCARD_DOMAIN}
+
+6.- Update de version + Commit 
+--------
+[student@workstation ~]$ vim ~/DO288-apps/php-scale
+-----> Change number 1 for 2
+
+[student@workstation ~]$ cd ~/DO288-apps
+[student@workstation ~]$ git add .
+[student@workstation ~]$ git commit -m "Actualizando Version"
+[student@workstation ~]$ git push
+
+7.- Web console to shoot new build 
+--------
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Builds -> BuildConfig -> Start BuildConfig
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ curl scale-${RHT_OCP4_DEV_USER}-manage-deploy.${RHT_OCP4_WILDCARD_DOMAIN}
+
+8.- Rollback to last version 
+--------
+[student@workstation ~]$ oc rollback dc/scale
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ curl scale-${RHT_OCP4_DEV_USER}-manage-deploy.${RHT_OCP4_WILDCARD_DOMAIN}
+
+9.- Grade Work 
+--------
+[student@workstation ~]$ lab manage-deploy grade
+
+10.- Delete project 
+--------
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-manage-deploy 
+
+11.- Finish
+--------
+[student@workstation ~]$ lab manage-deploy finish

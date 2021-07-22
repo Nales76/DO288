@@ -1,0 +1,340 @@
+EJERCICIO TOMCAT - PARTE 2			Last Update: 11-Noviembre-2020
+===========================
+
+INTRODUCCIÓN
+------------
+* Apache Tomcat
+Apache Tomcat (o, sencillamente, Tomcat) es un contenedor de servlets que se puede usar para compilar y ejecutar aplicaciones web realizadas en Java. Implementa y da soporte tanto a servlets como a páginas JSP (Java Server Pages) o Java Sockets.
+
+ Para más info ver: https://es.wikipedia.org/wiki/Tomcat
+
+* Consola de gestión Tomcat
+
+Es una aplicación web, instalada en el contexto /manager que soporta las funciones de:
+
+	- desplegar una app nueva desde un fichero war
+	- desplegar una app nueva en un contexto específico desde el FS del sistema
+	- Listar las apps web desplegadas y ver las sesiones activas de esas apps
+	- Recargar una app web existente para reflejar los cambios producidos en los dirs:
+		/WEB-INF/classes o /Web-INF/lib.
+	- Listar los valores de las propiedades de JVM y del S.O.
+	- Listar los recursos JNDI para usar en herramientas de despliegue que preparan los
+	 elementos <ResourceLink> que están en el bloque <Context> del descriptor de depliegue.
+	- Arrancar una app parada.
+	- Parar una app existente sin quitarla de los despliegues.
+	- Quitar de los despliegues una app web y borrar su directorio base de documento.	
+
+Se usa para desplegar una nueva app web o quitar una existente sin necesidad de reiniciar el contenedor.
+
+ENUNCIADO
+---------
+
+Usando la IC de tomcat que tiene el usuario en Quay: (PARTE 1 del ejercicio)
+
+PASOS A REALIZAR:
+
+1.- Clonar el código fuente que está en:
+
+	https://github.com/openshiftdemos/os-sample-java-web.git
+
+ en el GitHub del usuario.
+
+2.- Desplegar la aplicación cuyo código fuente está en el GitHub del usuario con los requisitos:
+
+ - Usar el usuario developer proporcionado para el clúster OCP y el proyecto "<usuario_OCP>-tomcat".
+
+ - En dicho proyecto, usar un secret llamado "quaycreds" para almacenar las credenciales de Quay. Dichas credenciales están en las variables de entorno "QUAY_USER" y "QUAY_PASSWD".
+
+ - Crear un IS llamado "tomcat" en el proyecto que contenga el ISTag que apunte a la IC de Quay del usuario. 
+
+ - Todos los recursos creados deben tener la etiqueta "app=mijava"
+
+ - Crear una ruta para la app y utilizarla para ver su funcionamiento.
+
+3.- Modificar la aplicación para que el mensaje esté en español y volver a desplegarla.
+
+4.- Configurar en GitHub un webhook para que cada vez que se cambie el código en GitHub se despliegue automáticamente la nueva versión de la app.
+
+5.- Acceder a la consola de Tomcat en la ruta de la app /manager. 
+
+    Para que no de un 403 (Access Denied) al no permitir conexiones que no sean desde localhost, 
+    debo modificar ciertos ficheros de configuración "secure-mgmt-console.sh" y "context.xml" de la aplicación.
+    Las modificaciones a realizar son:
+
+   En el primer fichero que está en "/opt/jws-5.3/tomcat/bin/launch/secure-mgmt-console.sh", debo modificar la línea 13 con:
+
+	sed -i -e"s|</tomcat-users>|\n<role rolename=\"manager-gui\"/>\n<user username=\"${JWS_ADMIN_USERNAME}\" password=\"${JWS_ADMIN_PASSWORD}\" roles=\"manager-gui\"/>\n</tomcat-users>|" $JWS_HOME/conf/tomcat-users.xml
+
+   El segundo fichero que está en "/opt/jws-5.3/tomcat/webapps/manager/META-INF/context.xml", debo modificar en las líneas 19 y 23:
+   comentar las Valve con <<!-- y después del fin del allow poner --> 
+
+ Además, debo crear las variables de entorno "JWS_ADMIN_USERNAME" y "JWS_ADMIN_PASSWORD" ambas con el valor "jwsadmin" y "SCRIPT_DEBUG" con valor "true".
+
+6.- Desde la consola de Tomcat, desplegar la app que se proporciona en el fichero war "EjemploPruebaCarga.war" e intentar acceder desde un navegador a esta app. 
+  Probar con los usuarios y passwords de la app: 
+
+	pepe/pepe123, juan/juan123, roberto/roberto123 o chonto/chonto123.
+
+7.- Eliminar el proyecto.
+
+E
+
+   El segundo fichero está en "/opt/jws-5.3/tomcat/webapps/manager/META-INF/context.xml" y en las líneas 19 y 23, comentar las Valve con <<!-- y después del fin del allow poner --> 
+
+ Además, debo crear las variables de entorno "JWS_ADMIN_USERNAME" y "JWS_ADMIN_PASSWORD" ambas con el valor "jwsadmin" y "SCRIPT_DEBUG" con valor "true".
+
+6.- Desde la consola de Tomcat, desplegar la app desde el fichero war "EjemploPruebaCarga.war" que está en http://content.example.com/Apps
+   e intentar acceder desde un navegador a la app. Probar con los usuarios de la app: 
+	pepe/pepe123, juan/juan123, roberto/roberto123 o chonto/chonto123.
+
+7.- Eliminar el proyecto.
+
+
+
+
+----------
+PASO 1 - CLONA CODIGO FUENTE EN GITHUB USUARIO
+----------
+
+
+----------
+PASO 2 - DESPLEGAR APLICACION
+----------
+
+____ 2.1.- Crear Proyecto
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-tomcat
+
+____ 2.2.- Crear credenciales QUAIO en un Secret ----> ¡¡¡ A UNA SERVICE ACCOUNT !!! oc secret link SA=default SECRET=quayio
+[student@workstation ~]$ oc create secret docker-registry quaycreds  --docker-server quay.io  --docker-username ${QUAY_USER}  --docker-password ${QUAY_PASSWD} 
+
+____ 2.3.- Indicar a Builder SA donde estan las credenciales que tiene que usar
+[student@workstation ~]$ oc secrets link builder quaycreds --for pull
+
+____ 2.4.- Crear IS
+[student@workstation ~]$ oc import-image tomcat --confirm  --reference-policy local --from quay.io/${RHT_OCP4_QUAY_USER}/tomcat:9.0 
+[student@workstation ~]$ oc get istag
+[student@workstation ~]$ oc describe is tomcat
+
+____ 2.5.- Desplegar Aplicacion
+[student@workstation ~]$ oc new-app --as-deployment-config --name mijava  -i tomcat:latest https://github.com/CesarTest/os-sample-java-web.git
+
+____ 2.6.- Exponer ruta
+[student@workstation ~]$ oc get pod
+[student@workstation ~]$ oc expose svc mijava
+[student@workstation ~]$ oc get route
+[student@workstation ~]$ curl  http://info-${RHT_OCP4_DEV_USER}-expose-image.${RHT_OCP4_WILDCARD_DOMAIN}
+
+----------
+PASO 3 - MODIFICAR APLICACION PARA QUE ESTE EN ESPAÑOL
+----------
+
+____ 3.1.- Clonar codigo
+[student@workstation ~]$ git clone https://github.com/CesarTest/os-sample-java-web.git
+
+____ 3.2.- Editar codigo
+[student@workstation ~]$ vim ./java-test/os-sample-java/src/main/webapp/index.jsp
+
+____ 3.3.- GIT => Push cambios
+[student@workstation ~]$ cd ./java-test/os-sample-java
+[student@workstation os-sample-java]$ git add .
+[student@workstation os-sample-java]$ git commit -m "Cambiando a español"
+[student@workstation os-sample-java]$ git push
+.... Username: CesatTest
+.... Password: ciscousa45
+
+[student@workstation os-sample-java]$ cd ~
+
+____ 3.4.- Arrancar construccion
+[student@workstation ~]$ oc start-build bc/mijava
+[student@workstation ~]$ curl $(oc get route --no-headers | tr -s ' ' ' ' | cut -d ' ' -f2)
+
+----------
+PASO 4 - ACTIVAR WEBHOOK
+----------
+
+____ 4.1.-  Localizar Webhook
+
+[student@workstation ~]$ oc describe bc mijava
+....
+WebHook GitHub:
+     URL: ${RHT_OCP4_MASTER_API}/apis/build.openshift.io/v1/namespaces/${RHT_OCP4_DEV_USER}-tomcat/buildconfigs/mijava/webhooks/<secret>/github
+
+WebHook Generic:
+     URL: ${RHT_OCP4_MASTER_API}/apis/build.openshift.io/v1/namespaces/${RHT_OCP4_DEV_USER}-tomcat/buildconfigs/mijava/webhooks/<secret>/generic
+......
+
+____ 4.2.-  Localizar Secret
+[student@workstation ~]$ oc get bc mijava  -o jsonpath="{.spec.triggers[*].github.secret}{'\n'}"
+......
+4R8kYYf3014kCSPcECmn
+......
+
+____ 4.3.-  Activar WebHook en GitHub
+Firefox -> https://github.com/CesarTest/os-sample-java-web -> Settings -> WebHooks -> Add WebHook
+....... Payload URL: ${RHT_OCP4_MASTER_API}/apis/build.openshift.io/v1/namespaces/${RHT_OCP4_DEV_USER}-tomcat/buildconfigs/mijava/webhooks/<secret>/github
+.... Secret: 4R8kYYf3014kCSPcECmn
+
+____ 4.4.-  Llamada a la API
+[student@workstation ~]$ vim webhook.sh
+.......
+#!/bin/bash
+####################################################
+#                  WEBHOOK.SH
+#---------------------------------------------------
+#   Enable WebHook on a BuildConfig
+#---------------------------------------------------
+# Author: Cesar Delgado 
+# Date  : 14-Jun-2021
+####################################################
+
+####################################################
+#  ENVIRONMENT
+####################################################
+
+#--------------------------------
+#  GENERAL PARAMETERS
+#--------------------------------
+ERROR="1"
+OK="0"
+
+#--------------------------------
+#  DEFAULT VALUES
+#--------------------------------
+BUILD_CONFIG="mijava"
+WEBHOOK_TYPE="Generic"
+
+####################################################
+#  FUNCTIONS
+####################################################
+
+#===================================================
+#   Function: help
+#---------------------------------------------------
+#  Private Function
+#
+#  Shows command options
+#===================================================
+helpWebhook() {
+   echo " webhook.sh -[hgib:] <opcion> "
+
+   # Opciones Generales
+   echo "  -h                         : Shows this help"
+   echo "  -b <BUILD_CONFIG> [mijava] : Set Build Config Name"
+   echo "  -i                         : Set GitHub WebHook"
+   echo "  -g                         : Get Generic WebHook"
+   echo ""
+}
+
+#===================================================
+#   Function: buildURL
+#---------------------------------------------------
+#  Private Function
+#
+#  Build Webhook URL
+#===================================================
+buildURL() {
+
+	# => 1.- Tipo de WebHook 
+	local WEBHOOK_PATTERN=$(echo ${WEBHOOK_TYPE} | tr '[A-Z]' '[a-z]' )
+
+	# => 2.- Capture Secret 
+	local WEBHOOK_SECRET=$(oc get bc ${BUILD_CONFIG} -o jsonpath="{.spec.triggers[*].${WEBHOOK_PATTERN}.secret}{'\n'}")
+	local WEBHOOK_SECRET=$(echo ${WEBHOOK_SECRET} | tr -d ' ')
+
+	# => 3.- Capture URL
+	local WEBHOOK_URL=$(oc describe bc ${BUILD_CONFIG} | awk "/Webhook ${WEBHOOK_TYPE}/ {getline; print $1}")
+	local WEBHOOK_URL=${WEBHOOK_URL#*:}
+	local WEBHOOK_URL=$(echo ${WEBHOOK_URL} | tr -d ' ')
+
+	# => 4.- Replace Secret within URL
+	if [ ! -z ${WEBHOOK_URL} ] ; then
+		if [ ! -z ${WEBHOOK_SECRET} ] ; then
+			WEBHOOK=${WEBHOOK_URL/<secret>/${WEBHOOK_SECRET}}
+		fi
+	fi
+	
+	# 2.- Dump variables
+	#--------------------
+	echo "===================================="
+	echo " ENVIRONMENT"
+	echo "===================================="
+	echo ".... WEBHOOK_TYPE=[${WEBHOOK_TYPE}]"
+	echo ". WEBHOOK_PATTERN=[${WEBHOOK_PATTERN}]"
+	echo "..... WEBHOOK_URL=[${WEBHOOK_URL}]"
+	echo ".. WEBHOOK_SECRET=[${WEBHOOK_SECRET}]"
+	echo "......... WEBHOOK=[${WEBHOOK}]"
+}
+
+#===================================================
+#   Function: enableWebhook
+#---------------------------------------------------
+#  Private Function
+#
+#  Shoot API Call to enable webhook
+#===================================================
+enableWebhook() {
+	echo "===================================="
+	echo " API CALL"
+	echo "===================================="
+	local OUT=$OK
+	
+	if [ ! -z ${WEBHOOK} ] ; then
+		echo "curl -X POST -k ${WEBHOOK}"
+		curl -X POST -k ${WEBHOOK} 
+	    OUT=$?	
+	else 
+		echo "WebHook URL couldn't be built"
+		OUT=$ERROR
+	fi
+	
+	return "$OUT"
+}
+
+####################################################
+#  CAPTURE INPUT PARAMETERS
+####################################################
+while getopts "hgib:" OPCION ; do
+     case "$OPCION" in
+	     h) helpWebhook
+		    exit "$ERROR" ;;
+         b) if [ -n "$OPTARG" ] ; then  BUILD_CONFIG="$OPTARG"  ;  fi ;;
+         i) WEBHOOK_TYPE="GitHub" ;;
+         g) WEBHOOK_TYPE="Generic" ;;
+       [?]) echo " ERROR | webhook.sh -> Option not found "
+	        helpWebhook ;;
+      esac
+done
+
+####################################################
+#  ACTIONS
+####################################################
+
+echo "=============================================================="
+echo "| WEBHOOK.SH : enable hook for a given BuildConfig  "
+echo "=============================================================="
+echo " Build Config     = ${BUILD_CONFIG}"
+echo " WebHook Type     = ${WEBHOOK_TYPE}"
+echo ""
+buildURL
+enableWebhook
+OUT="$?"
+
+echo ""
+echo "WEBHOOK.SH : exiting  $OUT (OK=$OK ; ERROR=$ERROR)   "
+echo "=============================================================="
+exit "$OUT"
+
+.......
+
+----------
+PASO 5 - MODIFICAR CONDICIONES DESPLIEGUE
+----------
+
+# => 5.1.- Crear ConfigMaps con las configuraciones
+
+
+
+# => 5.2.- Agregar variables de entorno
+
+

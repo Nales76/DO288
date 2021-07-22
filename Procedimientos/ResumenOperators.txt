@@ -1,0 +1,95 @@
+OPERATORS				Last Update: 4-Junio-2021
+==========
+
+Son aplicaciones Kubernetes que invocan a la API Kubernetes para gestionar los recursos de Kubernetes.
+
+Formadas por CRD (sintáxis del CR) y CR (configuración) se añaden a la API Kubernetes para extenderla 
+y realizan tareas administrativas/automatizadas en el clúster controlando otros recursos.
+
+OperatorHub: repositorio de Operators, parecido a un registry. Realmente las IC se almacenan en Quay.io. La BP es que se instalen desde aquí.
+
+Operator SDK: Conjunto de librerías GoLang y ejemplos con patrones para desarrollar operators. Tienen que seguir unos estándares para que
+  se puedan instalar/gestionar desde OLM.
+
+Operator Lifecycle Manager - OLM - instala, actualiza y gestiona operators que se despliegan desde un catálogo de operators (p.e. Operator Hub). 
+  Preinstalado en OpenShift.
+	
+	Ver los operator gestionados por OLM (los ya instalados):
+
+	oc get subcriptions -A	
+
+El OLM tiene los 5 CR:
+
+	-> ClusterServiceVersion - CSV (parecido a un RPM): es el recurso que describe un operator. Representa una versión de un operator y contiene:
+
+		  * Metadatos: nombre, versión, descripción e icono
+		  * Info de instalación, los despliegues que se crean y los permisos necesarios
+		  * CRDs: que lleva el operator
+		  * Anotaciones de los campos CRD para dar info de cómo dar valores específicos en esos campos
+	
+	Ver los Operators instalados en el clúster:	oc get csv -A
+
+	-> Catalog Source: información para acceder al repositorio de los operators. 
+		Con:
+		   oc get packagemanifest 			-> se ven todos los operators que se pueden instalar
+		
+		   oc describe packagemanifests <operator>	-> ver toda la info de uno en concreto
+			
+	
+	-> Subscription: (parecido a un yum install). Lleva info de:
+
+		* "channel": desde el que instalar el operator
+		* "name": nombre del operator a instalar
+		* "source": fuente del operator 
+		* "sourceNamespace": namespace de la fuente
+
+	-> InstallPlan: creado por la suscription, describe la lista de recursos que OLM debe crear según el CSV.
+ 
+	-> OperatorGroup: namespaces accedidos por el operator; van en el atributo "targetNamespaces". 
+	     Si se deja vacío el spec, todos los namespaces tendrán un csv de ese operator, p.e. el del ES funciona así. 
+
+
+GESTIÓN DE OPERATORS 
+---------------------
+
+Ver los recursos del operator:
+
+	oc get all -n <proyecto-operator>
+
+Ver los CR que lleva un operator:
+
+	oc describe deployment $(oc get deployment -o name -n <proyecto-operator>) -n <proyecto-operator> | grep -i kind
+
+CLUSTER OPERATORS
+------------------
+
+Son los operators de Openshift que le añaden capacidades y están gestionados por el Cluster Version Operator - CVO.
+Son responsables de gestionar los componentes principales del clúster: API server, consola web, OAuth server, ...
+
+Llevan un CR de tipo ClusterOperator y luego distintos CR para gestionar sus componentes.
+
+Ver los cluster operator instalados:
+
+	oc get clusteroperator
+
+INSTALAR UN OPERATOR DE OPERATOR HUB
+------------------------------------
+
+0.- Obtener datos del operator:
+
+	oc get packagemanifests		-> Veo cómo se llama el operator
+
+	oc describe packagemanifests <operator>  y   oc get -o yaml packagemanifests <operator>		-> Veo los datos necesarios a poner en subscription
+
+1.- Crear un proyecto para alojar el operator, con la definición de recurso de namespace.
+
+2.- Crear operator group en el proyecto del operator con el fichero de definición de recurso.
+
+3.- Crear subscription con el fichero de definición de recurso usando los datos del paso 0.
+
+4.- Verificar estado y despliegue del operator:
+
+	oc describe sub <operator> -n <proyecto-operator>	-> Veo el status 
+
+	oc logs pod $(oc get pod -o name -n openshift-operator-lifecicle-manager | grep olm) -n openshift-operator-lifecycle-manager -> Veo mensaje de subscripción añadida
+

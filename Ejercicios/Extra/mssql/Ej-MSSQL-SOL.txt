@@ -1,0 +1,108 @@
+EJERCICIO MS SQL		SOLUCIÓN				Last update: 24-Nov-2020
+=================
+
+Con el usuario developer y en el proyecto "<usuario>-mssql":
+
+1.- Desplegar una BBDD Microsoft SQL Server dentro de OpenShift usando la plantilla que está en:
+
+	https://raw.githubusercontent.com/redhat-developer/s2i-dotnetcore-persistent-ex/dotnetcore-3.1-mssql/openshift/mssql2019.json
+
+	usando los valores estándar.
+
+2.- Desplegar la app cuyo código fuente está en:
+
+	https://github.com/redhat-developer/s2i-dotnetcore-persistent-ex 
+
+	subdirectorio "app", branch  "dotnetcore-3.1-mssql" 
+
+  Esta app necesita las variables de entorno "MSSQL_SA_PASSWORD" and "MSSQL_SERVICE_NAME" con la password de acceso a la BBDD y el nombre del servicio de la BBDD. 
+  (PISTA: usar el secret del punto anterior)
+  
+ La App necesita la versión de .NET Core 3.1. Para esto se creará un IS llamado dotnet en el mismo proyecto cuyos tags 3.1 y latest referencien a la IC:
+
+	 "registry.access.redhat.com/ubi8/dotnet-31:3.1"
+
+3.- Acceder a la app y meter los registros:
+
+	Juan, Pedro, Ana y Maria
+
+
+SOLUCIÓN
+---------
+
+0.- Hacer login en el clúster OCP con el usuario developer:
+
+	oc login -u <USUARIO> -p <PASSWORD> <MASTER_API>
+
+ creo el proyecto:
+
+	oc new-project <usuario>-mssql
+
+1.- Desplegar la BBDD usando la plantilla dada:
+
+ creo la plantilla en el proyecto:
+
+	oc create -f https://raw.githubusercontent.com/redhat-developer/s2i-dotnetcore-persistent-ex/dotnetcore-3.1-mssql/openshift/mssql2019.json
+
+	oc get template 
+
+ veo que parámetros lleva:
+
+	oc process --parameters mssql2019
+
+ proceso la plantilla:
+
+	oc new-app --template=mssql2019 -p ACCEPT_EULA=Y
+
+ ver el pod de la BBDD:
+
+	oc get pod
+
+2.- Desplegar la app
+
+ Creo el IS de la ICConstrucción: 2 formas posibles
+
+   1a forma: 
+	oc import-image dotnet:3.1 --from=registry.access.redhat.com/ubi8/dotnet-31:3.1 --confirm
+
+   2a forma:
+
+	oc create is dotnet
+	oc tag registry.access.redhat.com/ubi8/dotnet-31:3.1 dotnet:3.1
+
+ Añadir el tag lates:
+
+	oc tag dotnet:3.1 dotnet:latest --alias
+
+ Ver el is creado: 
+	oc describe is dotnet
+
+ Despliego la app:
+
+	oc new-app --as-deployment-config dotnet:3.1~https://github.com/redhat-developer/s2i-dotnetcore-persistent-ex#dotnetcore-3.1-mssql --context-dir app --name=frontend
+
+ configuro las vars de entorno que necesita la app:
+
+	oc set env --from=secret/mssql-secret dc/frontend --prefix=MSSQL_
+ 
+ veo las variables de entorno del DC:
+
+	oc set env --from=secret/mssql-secret dc/frontend --list
+
+3.- Accedo a la app:
+
+	La aplicación no tiene ruta, la creo:
+
+	oc expose svc frontend
+
+	URL=$(oc get route frontend -o jsonpath='{.spec.host}')
+
+ desde un navegador web accedo a $URL e inserto los registros dando a "Create".
+
+Puedo probar a escalar a 0 el pod del frontend, luego el de la BBDD para a continuación escalar a 1 el de la BBDD, luego el del frontend, acceder a la ruta de
+nuevo con el navegador y ver que los datos se mantienen ya que la BBDD se persiste por el PVC que existe en el mismo proyecto.
+
+FIN
+
+
+Ref.: https://developers.redhat.com/blog/2020/10/27/using-microsoft-sql-server-on-red-hat-openshift/

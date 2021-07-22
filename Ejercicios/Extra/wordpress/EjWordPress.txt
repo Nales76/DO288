@@ -1,0 +1,104 @@
+EJERCICIO WORDPRESS				Last Update: 27-Nov-2020
+====================
+
+INTRODUCCIÓN
+-------------   	
+Wordpress es un sistema de gestión de contenidos (CMS) lanzado en mayo de 2003 que permite crear y mantener un blog u otro tipo de webs de contenido. Desarrollado en lenguaje PHP para entornos MySQL y Apache es software libre bajo licencia GPL.
+
+Es muy popular al ser sencillo e intuitivo para crear un blog personal y permitir realizar toda clase de webs más complejas. Ideal para un sitio web que se actualice periódicamente. Si se escribe contenido con cierta frecuencia, cuando alguien accede al sitio web, puede encontrar todos esos contenidos ordenados cronológicamente.
+
+Tiene mala reputación por ser propenso a las vulnerabilidades de seguridad y no ser una plataforma segura en uso empresarial lo que hace que sea un buen
+candidato a ser ejecutado en un contenedor.
+
+Ver más info: https://es.wordpress.com/
+
+ENUNCIADO
+----------
+Se va a desplegar la aplicación Wordpress, para ello:
+
+	1. Con el usuario <USUARIO> dado en el entorno del curso, se creará el proyecto "<USUARIO>-wordpress".
+
+	2. Para crear la BBDD, se procesará la plantilla de mysql con almacenamiento persistente con el nombre de BBDD "wordpress", 
+	usuario de la BBDD "pepe" y password "perez", password de root "redhat". El almacenamiento de la BBDD será de 2 Gi.
+
+	3. Usar la imagen de contenedor de Wordpress de "quay.io/mmginstructor/wordpress" para desplegar la app en 
+	http://wordpress-<USUARIO>.${RHT_OCP4_WILDCARD_DOMAIN}.
+
+NOTA 1: Se puede encontrar la información sobre la imagen de contenedor de Wordpress en: https://hub.docker.com/_/wordpress/
+
+NOTA 2: Se puede realizar el ejercicio en el playground de OpenShift 4.5 que está en https://learn.openshift.com/playgrounds/openshift45/. Hacer pull a la IC de Docker de WordPress en docker.io/wordpress y push al puerto 5000 del registry interno de OCP usando su IP de servicio.
+
+NOTA3: El ejercicio se debe hacer en un clúster OCP donde se tenga usuario con privilegios de cluster-admin
+     
+   Si se hace en el entorno del DO280, nada más recrear el entorno, para tener disponibles las variables de entorno y los usuarios developer (password developer) y
+     admin (password redhat) se ha de ejecutar:
+
+	lab execute-troubleshoot start && lab execute-troubleshoot finish
+
+	lab auth-rbac start && lab auth-rbac finish
+
+	echo "source /usr/local/etc/ocp4.config" >> ~/.bashrc
+
+
+----------
+PASO 1 - CREAR PROYECTO
+----------
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-wordpress --description="Wordpress" --display-name="Wordpress"
+[student@workstation ~]$ oc describe ${RHT_OCP4_DEV_USER}-wordpress
+
+----------
+PASO 2 - DESPLEGAR BASE DE DATOS DE PLANTILLA
+----------
+
+##############
+#  TROUBLESHOOTING DATOS
+#    
+##############
+
+
+2.1.- Localizar Plantilla
+------
+[student@workstation ~]$ oc get template -n openshift | grep mysql-persistent
+[student@workstation ~]$ oc process --parameters mysql-persistent -n openshift 
+.....
+MYSQL_ROOT_PASSWORD=redhat
+MYSQL_USER=pepe
+MYSQL_PASSWORD=perez
+MYSQL_DATABASE=wordpress
+VOLUME_CAPACITY=2Gi
+.....
+-p MYSQL_USER=pepe -p MYSQL_PASSWORD=perez -p MYSQL_DATABASE=wordpress -p MYSQL_ROOT_PASSWORD=redhat -p VOLUME_CAPACITY=2Gi
+
+2.2.- Procesar Plantilla
+------
+[student@workstation ~]$ OPCIONES='-p MYSQL_USER=pepe -p MYSQL_PASSWORD=perez -p MYSQL_DATABASE=wordpress -p MYSQL_ROOT_PASSWORD=redhat  -p VOLUME_CAPACITY=2Gi'
+[student@workstation ~]$ oc new-app --template mysql-persistent $OPCIONES -o yaml > mysql_template.yaml
+[student@workstation ~]$ oc create -f mysql_template.yaml
+[student@workstation ~]$ oc delete -f mysql_template.yaml
+ 
+  
+----------
+PASO 3 - DEPLEGAR APP
+----------
+
+3.1.- Instalar imagen de contenedor
+------
+[student@workstation ~]$ oc new-app --name=wordpress --docker-image=quay.io/mmginstructor/wordpress
+[student@workstation ~]$ oc set env deployment/wordpress --prefix WORDPRESS_DB_ --from secret/mysql
+[student@workstation ~]$ oc edit deployment/wordpress  
+
+
+3.2.- Intentar darle permisos a Service Account
+------
+[student@workstation ~]$ oc get pod <nombre_pod> -o yaml | oc adm policy scc-subject-review -f -
+[student@workstation ~]$ oc create sa wordpress-sa
+[student@workstation ~]$ oc adm policy add-scc-to-user anyuid -z wordpress-sa
+[student@workstation ~]$ oc set serviceaccount deployment wordpress wordpress-sa
+
+3.3.- Si no se puede... hay que modificar el Dockerfile
+------
+[student@workstation ~]$ mkdir wordpress
+[student@workstation ~]$ cd wordpress
+[student@workstation wordpress]$ git init .
+[student@workstation wordpress]$ wget 

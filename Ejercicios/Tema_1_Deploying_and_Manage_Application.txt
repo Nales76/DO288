@@ -1,0 +1,449 @@
+==============================================
+ TEMA -1- DEPLOYING AND MANAGING APPLICATIONS ON AN OPENSHIFT CLUSTER
+==============================================
+
+----------
+GUIDED 1 - Configuring the Classroom Environment
+----------
+
+1.- Configure Lab 
+--------
+[student@workstation ~]$ lab-configure
+
+ · Enter the API Endpoint: https://api.eu45.prod.nextcle.com:6443 
+ · Enter the Username: andepiel45-hotmail-com
+ · Enter the Password: 8b1209eac3bb4a0b920e
+ · Enter the GitHub Account Name: CesarTest
+ · Enter the Quay.io Account Name: andepiel45 
+--------
+ · Enter the API Endpoint: https://api.eu45.prod.nextcle.com:6443
+ · Enter the Username: dgmhgy
+ · Enter the Password: f8490109bfea43ee9e4b
+ · Enter the GitHub Account Name: CesarTest
+ · Enter the Quay.io Account Name: andepiel45 
+--------
+
+ 
+
+[student@workstation ~]$ vim ~/.bashrc
+....
+source /usr/local/etc/ocp4.config ----> ADD THIS LINE
+.....
+
+[student@workstation ~]$ oc completion bash > .oc_bashcompletion.sh
+[student@workstation ~]$ echo "source ~/.oc_bashcompletion.sh" >> ~/.bashrc
+[student@workstation ~]$ source ~/.bashrc
+
+
+2.- Configure GitHub 
+--------
+Firefox -> https://github.com/RedHatTraining/ -> Sign In
+.... Username: CesarTest
+.... Password: ciscousa45
+
+Firefox -> https://github.com/RedHatTraining/DO288-apps
+
+3.- Clone GitHub 
+--------
+[student@workstation ~]$ git clone https://github.com/CesarTest/DO288-apps
+[student@workstation ~]$ cd DO288-apps
+[student@workstation DO288-apps]$ head README.md
+[student@workstation DO288-apps]$ cd ~
+[student@workstation ~]$ 
+
+----------
+GUIDED 2 - Deploying an Application to an OpenShift Cluster
+----------
+
+0.- Start 
+--------
+[student@workstation ~]$ lab docker-build start
+
+1.- Push Image
+--------
+[student@workstation ~]$ cd DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+[student@workstation DO288-apps]$ git checkout -b docker-build
+[student@workstation DO288-apps]$ git push -u origin docker-build
+.... Username: CesarTest
+.... Password: ciscousa45
+
+[student@workstation DO288-apps]$ cat ubi-echo/Dockerfile
+......
+FROM registry.access.redhat.com/ubi8/ubi:8.0 
+USER 1001 
+CMD bash -c "while true; do echo test; sleep 5; done" 
+......
+
+2.- Create Project + Deploy Application 
+--------
+[student@workstation DO288-apps]$ source /usr/local/etc/ocp4.config
+[student@workstation DO288-apps]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation DO288-apps]$ oc new-project ${RHT_OCP4_DEV_USER}-docker-build
+[student@workstation DO288-apps]$ oc new-app --as-deployment-config --name echo  https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps#docker-build  --context-dir ubi-echo
+
+[student@workstation DO288-apps]$ oc logs -f bc/echo
+
+
+3.- Check logs Endpoint
+--------
+[student@workstation DO288-apps]$ oc status
+[student@workstation DO288-apps]$ oc get pod
+[student@workstation DO288-apps]$ oc logs echo-1-555xx | tail -n 3
+
+4.- Verify Resources created
+--------
+[student@workstation DO288-apps]$ oc describe bc echo
+[student@workstation DO288-apps]$ oc describe is echo
+[student@workstation DO288-apps]$ oc describe dc echo
+
+
+5.- Edit Dockerfile 
+--------
+[student@workstation DO288-apps]$vim ~/DO288-apps/ubi-echo/Dockerfile
+.....
+FROM registry.access.redhat.com/ubi8/ubi:8.0
+USER 1001
+CMD bash -c "while true; do (( i++ )); echo test \$i; sleep 5; done"
+.....
+[student@workstation DO288-apps]$ cd ubi-echo
+[student@workstation ubi-echo]$ git commit -a -m 'Add a counter'
+[student@workstation ubi-echo]$ git push
+[student@workstation ubi-echo]$ cd ~
+[student@workstation ~]$
+
+6.- Relaunch Buid 
+--------
+[student@workstation ~]$ oc start-build echo
+[student@workstation ~]$ oc logs -f bc/echo
+[student@workstation ~]$ oc status
+[student@workstation ~]$ oc get pod
+[student@workstation ~]$ oc logs echo-2-pl1hg | head -n 3
+
+7.- Check Image Stream is updated
+--------
+[student@workstation ~]$ oc describe is echo
+.....
+ image-registry.openshift-image-registry.svc:5000/youruser-docker-build/echo@sha256:025a...542f  2 minutes ago
+ image-registry.openshift-image-registry.svc:5000/youruser-docker-build/echo@sha256:5bbf...ef0b 
+......
+
+8.- Clean resources
+--------
+[student@workstation ~]$ oc delete all -l app=echo
+[student@workstation ~]$ oc get all
+
+9.- Finish 
+--------
+[student@workstation ~]$ lab docker-build finish
+  
+----------
+GUIDED 3 -  Managing an Application with the Web Console
+----------
+ 
+0.- Start 
+--------
+[student@workstation ~]$ lab deploy-image start
+
+1.- Login Web Console 
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER} -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc get route -n openshift-console
+
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com
+ · Enter the Username: andepiel45-hotmail-com
+ · Enter the Password: 8b1209eac3bb4a0b920e
+
+
+2.- Crear Application
+--------
+___ 2.1.- Create Project 
+
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Project -> New Project
+..... Name:  andepiel45-hotmail-com-deploy-image
+..... Display Name: 1_3_Deploy Image
+..... Description: Chap.1 - Guided 3 - Managing an Application with the Web Console
+
+
+___ 2.2.- Create Application 
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Project -> Project Details -> Workloads -> Add Other Content
+.... From Container Image
+.... Image from Registry: quay.io/redhattraining/php-hello-dockerfile 
+........... Image Name: hello
+........... Name: hello
+........... Resources: DeploymentConfig
+..... Create
+
+___ 2.3.- Create Route
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Networking -> Routes -> Create Route
+..... Name:     hello-route
+..... Hostname: andepiel45-hotmail-com.apps.eu45.prod.nextcle.com
+..... Path:     /
+..... Service:  hello
+..... Target Port: 8080 + 8080 (TCP)
+..... Create
+   
+3.- Explore Web Console Troubleshooting features
+--------
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Workloads -> PODs 
+.... Terminal: cat /var/logs/httpd/access_log
+
+4.- Delete resources from project
+--------
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Workloads -> PODs -> Actions -> Delete
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Workloads -> DeploymentConfig -> Hello -> Actions -> Delete
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Networking-> Services -> Hello -> Actions -> Delete
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Networking-> Routes -> Hello -> Actions -> Delete
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Networking-> Routes -> Hello-route -> Actions -> Delete
+
+5.- Delete project
+--------
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Projects -> andepiel45-hotmail-com-deploy-image -> Actions -> Delete
+..... Name: andepiel45-hotmail-com-deploy-image
+ 
+6.- Finish 
+--------
+[student@workstation ~]$ lab deploy-image finish
+ 
+ 
+----------
+GUIDED 4 -  Managing an Application with the CLI
+----------
+ 
+0.- Start 
+--------
+[student@workstation ~]$ lab build-template start 
+
+1.- Inspect source code  
+--------
+[student@workstation ~]$ cd ~/DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+[student@workstation DO288-apps]$ ls ~/DO288-apps/quotes
+[student@workstation DO288-apps]$ less ~/DO288-apps/quotes/get.php
+.....
+<?php
+ $link = mysqli_connect($_ENV["DATABASE_SERVICE_NAME"],$_ENV["DATABASE_USER"],
+$_ENV["DATABASE_PASSWORD"],$_ENV["DATABASE_NAME"]);
+ if (!$link) {
+ http_response_code (500);
+ error_log ("Error: unable to connect to database\n");
+ die();
+ }
+...output omitted
+
+2.- Inspect Template resources
+--------
+[student@workstation DO288-apps]$ vim ~/DO288/labs/build-template/php-mysql-ephemeral.json
+.....
+{
+ "kind": "Template",
+ "apiVersion": "v1",
+ "metadata": {
+ "name": "php-mysql-ephemeral",   ------> 1)
+...output omitted...
+ "objects": [
+ {
+ "apiVersion": "v1",
+ "kind": "Secret",               ----> 2) 
+...output omitted...
+ },
+ "stringData": {
+ "database-password": "${DATABASE_PASSWORD}",
+ "database-user": "${DATABASE_USER}"
+...output omitted...
+ {
+ "apiVersion": "v1",
+ "kind": "Route",           --------> 3) 
+...output omitted...
+ "spec": {
+ "host": "${APPLICATION_DOMAIN}",
+ "to": {
+ "kind": "Service",
+ "name": "${NAME}"
+...output omitted...
+
+
+[student@workstation DO288-apps]$ less ~/DO288/labs/build-template/php-mysql-ephemeral.json
+......
+...output omitted...
+ {
+ "apiVersion": "v1",
+ "kind": "BuildConfig",     -------> 1)
+...output omitted...
+ "source": {
+ "contextDir": "${CONTEXT_DIR}",
+ "git": {
+ "ref": "${SOURCE_REPOSITORY_REF}",
+ "uri": "${SOURCE_REPOSITORY_URL}"
+ },
+ "type": "Git"
+ },
+ "strategy": {
+ "sourceStrategy": {
+ "from": {
+ "kind": "ImageStreamTag",     ------> 2)
+ "name": "php:7.2",
+...output omitted...
+
+[student@workstation DO288-apps]$ less ~/DO288/labs/build-template/php-mysql-ephemeral.json
+...output omitted...
+ {
+ "apiVersion": "v1",
+ "kind": "DeploymentConfig", 
+...output omitted...
+ "containers": [
+...output omitted...
+ "name": "mysql",
+ "ports": [
+ {
+ "containerPort": 3306
+...output omitted...
+ "volumes": [
+ {
+ "emptyDir": {}, 
+ "name": "data"
+...output omitted...
+ "triggers": [
+...output omitted...
+ "from": {
+ "kind": "ImageStreamTag",  ------> 3)
+ "name": "mysql:5.7",
+...output omitted...
+
+[student@workstation DO288-apps]$ less ~/DO288/labs/build-template/php-mysql-ephemeral.json
+...output omitted...
+ "parameters": [
+ {
+ "name": "NAME",
+ "displayName": "Name",
+ "description": "The name assigned to all of the app objects defined in
+ this template.",
+...output omitted...
+ {
+ "name": "SOURCE_REPOSITORY_URL",    --------> 1)
+ "displayName": "Git Repository URL",
+ "description": "The URL of the repository with your application source
+ code.",
+...output omitted...
+ {
+ "name": "DATABASE_USER",   ----------------> 2)
+ "displayName": "Database User",
+...output omitted...
+
+3.- Create Project + Create Template 
+--------
+[student@workstation DO288-apps]$ source /usr/local/etc/ocp4.config
+[student@workstation DO288-apps]$ oc login -u ${RHT_OCP4_DEV_USER} -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation DO288-apps]$ oc get templates -n openshift | grep php | grep mysql
+[student@workstation DO288-apps]$ oc new-project ${RHT_OCP4_DEV_USER}-common
+[student@workstation DO288-apps]$ oc create -f  ~/DO288/labs/build-template/php-mysql-ephemeral.json
+
+4.- Apply Template
+--------
+[student@workstation DO288-apps]$ oc new-project  ${RHT_OCP4_DEV_USER}-build-template
+[student@workstation DO288-apps]$ oc describe template php-mysql-ephemeral  -n ${RHT_OCP4_DEV_USER}-common
+[student@workstation DO288-apps]$ cat ~/DO288/labs/build-template/create-app.sh
+.....
+oc new-app --as-deployment-config --template ${RHT_OCP4_DEV_USER}-common/phpmysql-ephemeral \
+ -p NAME=quotesapi \
+ -p APPLICATION_DOMAIN=quote-${RHT_OCP4_DEV_USER}.${RHT_OCP4_WILDCARD_DOMAIN} \
+ -p SOURCE_REPOSITORY_URL=https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps \
+ -p CONTEXT_DIR=quotes \
+ -p DATABASE_SERVICE_NAME=quotesdb \
+ -p DATABASE_USER=user1 \
+ -p DATABASE_PASSWORD=mypa55 \
+ --name quotes
+ ......
+ 
+[student@workstation DO288-apps]$ ~/DO288/labs/build-template/create-app.sh
+[student@workstation DO288-apps]$ oc logs -f bc/quotesapi
+[student@workstation DO288-apps]$ oc get pod
+[student@workstation DO288-apps]$ oc get route
+
+5.-  Verify EndPoints + Connectivity
+--------
+[student@workstation DO288-apps]$ oc describe svc quotesdb | grep Endpoints
+[student@workstation DO288-apps]$ oc describe pod quotesdb-1-hh2g9 | grep IP
+[student@workstation DO288-apps]$ oc describe pod quotesdb-1-hh2g9  | grep -A 4 Environment
+[student@workstation DO288-apps]$ oc describe pod quotesapi-1-r6f31  | grep -A 5 Environment
+
+# Verify Connectivity
+[student@workstation DO288-apps]$ oc rsh quotesapi-1-r6f31 bash -c  'echo > /dev/tcp/$DATABASE_SERVICE_NAME/3306 && echo OK || echo FAIL'
+
+6.-  Feed the database + Test result
+--------
+[student@workstation DO288-apps]$ oc logs quotesapi-1-r6f31
+[student@workstation DO288-apps]$ oc cp ~/DO288/labs/build-template/quote.sql  quotesdb-1-hh2g9:/tmp/quote.sql
+[student@workstation DO288-apps]$ oc rsh -t quotesdb-1-hh2g9
+sh-4.2$ mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE < /tmp/quote.sql
+sh-4.2$ exit
+
+[student@workstation DO288-apps]$ curl -si  http://quote-$RHT_OCP4_DEV_USER.$RHT_OCP4_WILDCARD_DOMAIN/get.php
+ 
+7.-  Delete Projects
+--------
+[student@workstation DO288-apps]$ cd ~
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-build-template
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-common 
+ 
+8.- Finish 
+--------
+[student@workstation ~]$ lab build-template finish
+ 
+----------
+LAB - Deploying and Managing Applications on an OpenShift Cluster
+----------
+
+0.- Start 
+--------
+[student@workstation ~]$ lab source-build start
+
+1.- Deploy Application 
+--------
+___ 1.1.- Create Branch
+[student@workstation ~]$ cd DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+[student@workstation DO288-apps]$ git checkout -b source-build
+[student@workstation DO288-apps]$ git push -u origin source-build
+.... Username: CesarTest
+.... Password: ciscousa45
+
+___ 1.2.- Create Project
+[student@workstation DO288-apps]$ source /usr/local/etc/ocp4.config
+[student@workstation DO288-apps]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation DO288-apps]$ oc new-project ${RHT_OCP4_DEV_USER}-source-build --description="DO288 - Chap.1 - Lab. Deploying and Managing Applications on an OpenShift Cluster" --display-name="Deploying Apps in OpenShift"
+
+___ 1.3.- Create Applications
+[student@workstation DO288-apps]$ oc new-app --as-deployment-config --name greet https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps#source-build  --context-dir nodejs-helloworld
+
+2.-  Locate construction error
+--------
+[student@workstation DO288-apps]$ oc get pods
+[student@workstation DO288-apps]$ oc logs greet-1-build 
+[student@workstation DO288-apps]$ python -m json.tool ./nodejs-helloworld/package.json
+....> Missing ":" 
+
+3.-  Fix construction error
+--------
+[student@workstation DO288-apps]$ vim ./nodejs-helloworld/package.json
+.... Add ":" 
+
+[student@workstation DO288-apps]$ python -m json.tool ./nodejs-helloworld/package.json
+[student@workstation DO288-apps]$ git commit -a -m 'Correct Package JSON'
+[student@workstation DO288-apps]$ git push
+
+4.- Start new build  
+--------
+[student@workstation ~]$ oc start-build greet
+
+5.- Verify App + Expose
+--------
+[student@workstation DO288-apps]$ oc logs greet-2-build 
+[student@workstation DO288-apps]$ oc expose service/greet --name=greet --hostname=greet-andepiel45-hotmail-com-source-build.apps.eu45.prod.nextcle.com
+[student@workstation DO288-apps]$ curl greet-andepiel45-hotmail-com-source-build.apps.eu45.prod.nextcle.com
+
+6.- Finish 
+--------
+[student@workstation ~]$ lab source-build grade
+[student@workstation ~]$ lab source-build finish

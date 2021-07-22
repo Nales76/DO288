@@ -1,0 +1,117 @@
+Ejercicio Catálogo de Fruta			Last Update: 6-Nov-2020
+----------------------------
+
+Usando el plugin de Maven Fabric8, se va a desplegar una aplicación que consiste en un catálogo de frutas.
+
+La aplicación tiene 3 componentes:
+	- frontend Angular + backend Spring Boot (App Java)
+	- BBDD MongoDB
+
+El código fuente de la app está en:
+
+	https://github.com/lbroudoux/secured-fruits-catalog-k8s
+	
+La aplicación no estaba pensada para ser ejecutada en contenedores, vamos a realizar cambios:
+	- Las credenciales de la BBDD (user y password) irán en un secret
+	- La ruta estará securizada (Edge).
+	- Se usará Fabric8 para desplegar la app (los cambios necesarios en el fichero pom.xml ya han sido realizados)
+	
+Pasos a seguir:
+
+ 1.- Usando el usuario developer de OCP, crear el proyecto "<usuario>-fruits-catalog" con display-name "Fruits Catalog".
+
+ 2.- Desplegar una BBDD MongoDB con almacenamiento persistente usando la template adecuada del proyecto openshift con los datos:
+		- Nombre de la BBDD: fruits
+		- Usuario: frutero
+		- Password: vitaminas
+		- Nombre del servicio: mongodb
+
+ 3.- Desplegar la app usando el pluging Maven Fabric8.
+
+ 4.- Modificar la ruta creada para que sea segura de tipo Edge y que si se accede a dicha ruta por http se haga la redirección a https.
+
+
+----------
+PASO 1 - CREAR EJEMPLOS
+----------
+____ 1.1.- Crear Proyecto
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-fruits-catalog --description="Gestion Inventariado de Frutas" --display-name="Fruits Catalog"
+[student@workstation ~]$ oc describe ${RHT_OCP4_DEV_USER}-fruits-catalog 
+
+----------
+PASO 2 - DESPLEGAR BASE DE DATOS DESDE PLANTILLA
+----------
+
+____ 2.1.- Localizar plantilla
+[student@workstation ~]$ mkdir fruits-catalog
+[student@workstation ~]$ cd fruits-catalog
+[student@workstation fruits-catalog]$ oc get template -n openshift | grep mongodb-persistent
+[student@workstation fruits-catalog]$ oc process --parameters mongodb-persistent -n openshift 
+.....
+MEMORY_LIMIT
+NAMESPACE
+DATABASE_SERVICE_NAME=mongodb
+MONGODB_USER=frutero
+MONGODB_PASSWORD=vitaminas
+MONGODB_DATABASE=fruits
+MONGODB_ADMIN_PASSWORD
+VOLUME_CAPACITY
+MONGODB_VERSION
+......
+-p DATABASE_SERVICE_NAME=mongodb -p MONGODB_USER=frutero -p MONGODB_PASSWORD=vitaminas -p MONGODB_DATABASE=fruits
+.....
+
+____ 2.2.- Procesar Plantilla
+[student@workstation fruits-catalog]$ OPCIONES='-p DATABASE_SERVICE_NAME=mongodb -p MONGODB_USER=frutero -p MONGODB_PASSWORD=vitaminas -p MONGODB_DATABASE=fruits'
+[student@workstation fruits-catalog]$ oc new-app --template mongodb-persistent $OPCIONES -n openshift -o yaml > mimongo_template.yaml
+
+____ 2.3.- Deplegar aplicacion
+[student@workstation fruits-catalog]$ oc create -f mimongo_template.yaml
+[student@workstation fruits-catalog]$ oc delete -f mimongo_template.yaml
+
+____ 2.4.- Comprobaciones
+[student@workstation fruits-catalog]$ oc get pvc
+[student@workstation fruits-catalog]$ oc get pods
+[student@workstation fruits-catalog]$ oc get secret
+
+----------
+PASO 3 - DESPLEGAR APPLICACION CON FABRIC 8
+----------
+
+____ 3.1.- Fork code in GitHub
+Firefox -> https://github.com/lbroudoux/secured-fruits-catalog-k8s -> Fork
+
+____ 3.2.- Create GIT Branch
+[student@workstation fruits-catalog]$ git clone https://github.com/CesarTest/secured-fruits-catalog-k8s
+[student@workstation fruits-catalog]$ cd secured-fruits-catalog-k8s
+[student@workstation secured-fruits-catalog-k8s]$ git checkout master
+[student@workstation secured-fruits-catalog-k8s]$ git checkout -b fruits-catalog
+[student@workstation secured-fruits-catalog-k8s]$ git push -u origin fruits-catalog
+
+____ 3.3.- Desplegar aplicacion
+[student@workstation secured-fruits-catalog-k8s]$ mvn fabric8:deploy -Popenshift
+
+____ 3.4.- Volver a la rama master
+[student@workstation secured-fruits-catalog-k8s]$ git checkout master
+[student@workstation secured-fruits-catalog-k8s]$ mvn fabric8:deploy -Popenshift
+[student@workstation secured-fruits-catalog-k8s]$ mvn fabric8:deploy -Popenshift
+
+____ 3.5- Localizar error de conexion
+[student@workstation secured-fruits-catalog-k8s]$ oc get pods
+[student@workstation secured-fruits-catalog-k8s]$ oc logs -f fruits-catalog-1-gas1Kasd
+.... ERROR Conexion Base datos, URI de conexion
+
+____ 3.6.- Modificar codigo fuente
+[student@workstation secured-fruits-catalog-k8s]$ git checkout -b fruits-catalog-new
+[student@workstation secured-fruits-catalog-k8s]$ git push -u origin fruits-catalog-new
+[student@workstation secured-fruits-catalog-k8s]$ vim ./src/main/fabric8/deployment.yml
+......
+
+......
+
+
+
+----------
+PASO 4 - MODIFICAR LA RUTA
+----------

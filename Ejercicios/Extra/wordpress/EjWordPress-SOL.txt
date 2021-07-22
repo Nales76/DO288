@@ -1,0 +1,180 @@
+EJERCICIO WORDPRESS		SOLUCIÓN			Last Update: 27-Nov-2020
+====================
+
+INTRODUCCIÓN
+-------------   	
+Wordpress es un sistema de gestión de contenidos (CMS) lanzado en mayo de 2003 que permite crear y mantener un blog u otro tipo de webs de contenido. Desarrollado en lenguaje PHP para entornos MySQL y Apache es software libre bajo licencia GPL.
+
+Es muy popular al ser sencillo e intuitivo para crear un blog personal y permitir realizar toda clase de webs más complejas. Ideal para un sitio web que se actualice periódicamente. Si se escribe contenido con cierta frecuencia, cuando alguien accede al sitio web, puede encontrar todos esos contenidos ordenados cronológicamente.
+
+Tiene mala reputación por ser propenso a las vulnerabilidades de seguridad y no ser una plataforma segura en uso empresarial lo que hace que sea un buen
+candidato a ser ejecutado en un contenedor.
+
+Ver más info: https://es.wordpress.com/
+
+ENUNCIADO
+----------
+Se va a desplegar la aplicación Wordpress, para ello:
+
+	1. Con el usuario <USUARIO> dado en el entorno del curso, se creará el proyecto "<USUARIO>-wordpress".
+
+	2. Para crear la BBDD, se procesará la plantilla de mysql con almacenamiento persistente con el nombre de BBDD "wordpress", 
+	usuario de la BBDD "pepe" y password "perez", password de root "redhat". El almacenamiento de la BBDD será de 2 Gi.
+
+	3. Usar la imagen de contenedor de Wordpress de "quay.io/mmginstructor/wordpress" para desplegar la app en 
+	http://wordpress-<USER>.${RHT_OCP4_WILDCARD_DOMAIN}.
+
+NOTA 1: Se puede encontrar la información sobre la imagen de contenedor de Wordpress en: https://hub.docker.com/_/wordpress/
+
+NOTA 2: Se puede realizar el ejercicio en el playground de OpenShift 4.5 que está en https://learn.openshift.com/playgrounds/openshift45/. Hacer pull a la IC de Docker de WordPress en docker.io/wordpress y push al puerto 5000 del registry interno de OCP usando su IP de servicio.
+
+NOTA3: El ejercicio se debe hacer en un clúster OCP donde se tenga usuario con privilegios de cluster-admin
+     
+   Si se hace en el entorno del DO280, nada más recrear el entorno, para tener disponibles las variables de entorno y los usuarios developer (password developer) y
+     admin (password redhat) se ha de ejecutar:
+	
+	lab execute-troubleshoot start && lab execute-troubleshoot finish
+
+	lab auth-rbac start && lab auth-rbac finish
+
+	echo "source /usr/local/etc/ocp4.config" >> ~/.bashrc
+
+
+
+SOLUCIÓN
+---------
+
+1.- Creo el proyecto con el usuario developer dado:
+
+	oc login -u <USUARIO> -p <PASSWORD> <MASTER_API>
+	oc new-project ${RHT_OCP4_DEV_USER}-wordpress
+
+2.- Despliego POD MYSQL
+
+  busco en el proyecto "openshift" la plantilla de mysql con almacenamiento persistente:
+
+	oc get template -n openshift | grep -i ^mysql -> se llama mysql-persistent
+
+  veo qué parámetros lleva:
+
+	oc process --parameters mysql-persistent -n openshift
+
+  me muestra los parámetros:
+
+	MEMORY_LIMIT	Por defecto 512Mi. Máx. memoria que puede usar el contenedor
+	NAMESPACE	Por defecto openshift. Nombre del proyecto donde está el IS
+	DATABASE_SERVICE_NAME	Por defecto mysql. Nombre del servicio
+	MYSQL_USER	Expresión. Usuario de la BBDD
+	MYSQL_PASSWORD	Expresión. Password del usuario
+	MYSQL_ROOT_PASSWORD	Expresión. Password del usuario root
+	MYSQL_DATABASE	Por defecto sampledb. Nombre de la BBDD
+	VOLUME_CAPACITY	Por defecto 1Gi. Almacenamiento persistente
+	MYSQL_VERSION	Por defecto 5.7. Versión de MySQL a usar
+
+  usaremos: MYSQL_USER=pepe, MYSQL_PASSWORD=perez, MYSQL_DATABASE=wordpress y VOLUME_CAPACITY=2Gi.
+
+
+ Importo/creo la plantilla en mi proyecto:
+
+	oc get -o yaml template mysql-persistent -n openshift > plantilla_mysql.yml
+
+	oc create -f plantilla_mysql.yml
+
+   Proceso la plantilla: 2 formas
+
+   * con el comando oc process:
+
+	oc process mysql-persistent -p MYSQL_USER=pepe -p MYSQL_PASSWORD=perez -p MYSQL_ROOT_PASSWORD=redhat \
+	-p MYSQL_DATABASE=wordpress -p VOLUME_CAPACITY=2Gi > procesado.yml
+
+   * con el comando oc new-app:
+
+	oc new-app --template=mysql-persistent -p MYSQL_USER=pepe -p MYSQL_PASSWORD=perez -p MYSQL_ROOT_PASSWORD=redhat \
+	-p MYSQL_DATABASE=wordpress -p VOLUME_CAPACITY=2Gi -o yaml > procesado.yml
+
+ 
+  Creo los recursos desde el fichero del procesado de la plantilla:
+
+	oc create -f procesado.yml
+
+	oc get all -> pod running, ya tengo el pod de la BBDD disponible
+ 
+ Best Practice: verificar que en el pod de la BBDD, las variables de entorno tienen los valores que le he puesto usando:
+
+	oc exec $(oc get pod | grep -i running | cut -d ' ' -f1) env
+
+
+3.- POD WORDPRESS
+
+ Desplegar la IC en el proyecto "<USUARIO>-wordpress":
+
+ Crear el pod de wordpress usando la IC del registry Quay.io: (ver variables de entorno en la web  https://hub.docker.com/_/wordpress/)
+	Como en el pod de Wordpress necesita en la variable WORDPRESS_DB_HOST la IP del servicio de mysql lo añado también:
+
+	oc new-app --docker-image=docker.io/wordpress -e WORDPRESS_DB_HOST=$(oc get svc mysql -o custom-columns=IP:.spec.clusterIP --no-headers) -e WORDPRESS_DB_USER=pepe \
+		-e WORDPRESS_DB_PASSWORD=perez -e WORDPRESS_DB_NAME=wordpress --as-deployment-config
+
+ si tengo problemas con docker.io, lo hago desde mi cuenta de quay.io donde habré subido previamente la imagen de wordpress:
+
+	oc new-app --docker-image=quay.io/mmginstructor/wordpress -e WORDPRESS_DB_HOST=$(oc get svc mysql -o custom-columns=IP:.spec.clusterIP --no-headers) -e WORDPRESS_DB_USER=pepe \
+		-e WORDPRESS_DB_PASSWORD=perez -e WORDPRESS_DB_NAME=wordpress --as-deployment-config
+
+ Ver qué recursos ha creado:
+
+	oc get all
+
+	El pod da un CrashLoopBackOff
+
+ Veo que puede estar pasando:
+
+	oc logs -f $(oc get pod | grep -i Crash | cut -d ' ' -f1)    -> Veo problemas de no poder levantar en puerto 80 
+
+	oc status --suggest
+
+	Se ve el mensaje:
+
+	Current security policy prevents your containers from being run as the root user. Some images
+	may fail expecting to be able to change ownership or permissions on directories. Your admin
+	can grant you access to run containers that need to run as the root user with this command:
+	oadm policy add-scc-to-user anyuid -n wordpress -z default
+
+ Corrijo el problema con el SCC:
+
+	- Creo la SA:
+
+		oc create sa sawordpress
+
+	- Añado la SA al SCC anyuid:
+
+		oc login -u admin -p <PASSWORD_ADMIN> <MASTER_API>
+		oc adm policy add-scc-to-user anyuid -z sawordpress -n <USUARIO>-wordpress	
+
+	- Modifico el DC wordpress para que use esta SA: 2 formas con oc edit o con oc set serviceaccount
+
+		oc login -u <USUARIO> -p <PASSWORD_USUARIO> <MASTER_API>
+
+		oc edit deploymentconfig wordpress	-> dentro de spec -> template -> spec y antes de "securitycontent: {}", añado: "serviceAccountName: sawordpress"
+
+     ó		oc set serviceaccount dc/wordpress sawordpress
+
+    se despliega automáticamente otra vez y listo!
+
+
+  Creo la ruta:
+
+	oc expose svc wordpress --hostname=wordpress-<USUARIO>.${RHT_OCP4_WILDCARD_DOMAIN}
+
+  Accedo desde un navegador a http://wordpress.${RHT_OCP4_WILDCARD_DOMAIN} (la parte de administración en http://wordpress.${RHT_OCP4_WILDCARD_DOMAIN}/wp-admin)
+
+  En el primer arranque de este pod, se instala wordpress, configura la BBDD de wordpress con las tablas y se crea el usuario administrador.
+
+  Verifico que se guardan las entradas en la BBDD:
+
+	oc port-forward $(oc get pod | grep -i running | grep wordpress | cut -d ' ' -f1) 13306:3306
+
+  En otro terminal:
+
+	mysql -u pepe -pperez -h 127.0.0.1 -P 13306
+	use wordpress; show tables; select .......
+
+FIN

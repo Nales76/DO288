@@ -1,0 +1,339 @@
+==============================================
+ TEMA -2- DESIGNING CONTAINERIZED APPLICATIONS ON OPENSHIFT
+==============================================
+
+#######################
+# OPENSHIFT... 
+#   Ejecuta usuario sin privilegios, pero grupo 0 (grupo root)
+####################### 
+ 
+  
+----------
+GUIDED 1 - Building Container Images with Advanced Dockerfile Instructions
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab container-build start
+
+1.- Check Parent Dockerfile
+--------
+[student@workstation ~]$ vim ~/DO288/labs/container-build/httpd-parent/Dockerfile
+......
+FROM registry.access.redhat.com/ubi8/ubi:8.0        ----> 1) UBI 
+
+MAINTAINER Red Hat Training <training@redhat.com>   
+
+# DocumentRoot for Apache
+ENV DOCROOT=/var/www/html            ------------------> 2) Environment Variables for Container
+
+RUN yum install -y --no-docs --disableplugin=subscription-manager httpd && \   -----> 3) Construct Image
+    yum clean all --disableplugin=subscription-manager -y && \
+    echo "Hello from the httpd-parent container!" > ${DOCROOT}/index.html
+
+# Allows child images to inject their own content into DocumentRoot
+ONBUILD COPY src/ ${DOCROOT}/       -------------------> 4) Inheritance properties, what child image does
+
+EXPOSE 80
+
+# This stuff is needed to ensure a clean start
+RUN rm -rf /run/httpd && mkdir /run/httpd
+
+# Run as the root user
+USER root    ------------------------------------------> 5) User
+
+# Launch httpd
+CMD /usr/sbin/httpd -DFOREGROUND
+......
+
+2.- Check Child Dockerfile
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ cd DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+[student@workstation DO288-apps]$ git checkout -b container-build
+[student@workstation DO288-apps]$ git push -u origin container-build
+..... username: CesarTest
+..... password: ciscousa45
+
+[student@workstation DO288-apps]$ vim ~/DO288-apps/container-build/Dockerfile 
+.....
+FROM quay.io/redhattraining/http-parent
+.....
+
+3.- Build Child Image
+--------
+[student@workstation DO288-apps]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation DO288-apps]$ oc new-project  ${RHT_OCP4_DEV_USER}-container-build
+[student@workstation DO288-apps]$ oc new-app --as-deployment-config --name hola  https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps#container-build  --context-dir container-build
+
+4.- Check logs
+--------
+[student@workstation DO288-apps]$ oc logs -f bc/hola
+.......
+Cloning "https://github.com/youruser/DO288-apps" ... 
+ Commit: 823cd7a7476b5664cb267e5d0ac611de35df9f07 (Initial commit)
+ Author: Your Name <youremail@example.com>
+ Date: Sun Jun 9 20:45:53 2019 -0400
+Replaced Dockerfile FROM image quay.io/redhattraining/httpd-parent
+Caching blobs under "/var/cache/blobs".
+
+Pulling image quay.io/redhattraining/httpd-parent@sha256:3e454fdac5 
+...output omitted...
+Getting image source signatures
+Copying blob sha256:d02c3bd
+...output omitted...
+Writing manifest to image destination
+Storing signatures
+STEP 1: FROM quay.io/redhattraining/httpd-parent@sha256:2833...86ff
+STEP 2: COPY src/ ${DOCROOT}/
+...output omitted...
+Successfully pushed //image-registry.openshift-image-registry.svc:5000/... 
+Push successful
+........
+
+5.- Check pods
+--------
+[student@workstation DO288-apps]$ oc get pods
+
+6.- Find Crash Reason
+--------
+[student@workstation DO288-apps]$ oc logs hola-1-p75f5
+AH00558: httpd: Could not reliably determine the server's fully qualified domain
+ name...
+(13)Permission denied: AH00072: make_sock: could not bind to address [::]:80 
+(13)Permission denied: AH00072: make_sock: could not bind to address 0.0.0.0:80 
+no listening sockets available, shutting down
+AH00015: Unable to open logs 
+
+7.- Delete resources + Edit imahe
+--------
+[student@workstation DO288-apps]$ oc delete all -l app=hola
+[student@workstation DO288-apps]$ diff ~/DO288-apps/container-build/Dockerfile ~/DO288/solutions/container-build/Dockerfile
+[student@workstation DO288-apps]$ vim ~/DO288-apps/container-build/Dockerfile 
+.....
+EXPOSE 8080
+
+LABEL io.openshift.expose-services="8080:http"
+LABEL io.k8s.description="A basic Apache HTTP Server child image, uses ONBUILD" \
+ io.k8s.display-name="Apache HTTP Server" \
+ io.openshift.expose-services="8080:http" \
+ io.openshift.tags="apache, httpd"
+RUN sed -i "s/Listen 80/Listen 8080/g" /etc/httpd/conf/httpd.conf
+RUN chgrp -R 0 /var/log/httpd /var/run/httpd && \
+    chmod -R g=u /var/log/httpd /var/run/httpd
+USER 1001
+.....
+
+
+8.- Commit changes + Push
+--------
+[student@workstation DO288-apps]$ cd container-build
+[student@workstation container-build]$ git commit -a -m "Changed Dockerfile to enable running as a random uid on OpenShift"
+[student@workstation container-build]$ git push
+[student@workstation container-build]$ cd ~
+
+9.- Create Container (en local o en remoto)
+--------
+[student@workstation ~]$ oc new-app --as-deployment-config --name hola  https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps#container-build  --context-dir container-build
+[student@workstation ~]$ oc new-app --as-deployment-config --name hola  ~/DO288-apps#container-build --context-dir container-build
+[student@workstation ~]$ oc get pods
+
+10.- Create route
+--------
+[student@workstation ~]$ oc expose svc/hola
+
+11.- Check routes
+--------
+[student@workstation ~]$ oc get route
+
+
+12.- Verify Accesibility
+--------
+[student@workstation ~]$ curl  http://hola-${RHT_OCP4_DEV_USER}-container-build.${RHT_OCP4_WILDCARD_DOMAIN}
+
+13.- Delete project
+--------
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-container-build
+
+14.- Finish
+--------
+[student@workstation ~]$ lab container-build finish
+
+
+----------
+GUIDED 2 - Injecting Configuration Data into an Application
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab app-config start
+
+1.- Create Branch + Inspect Code
+--------
+[student@workstation ~]$ cd DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+[student@workstation DO288-apps]$ git checkout -b app-config
+[student@workstation DO288-apps]$ git push -u origin app-config
+..... username: CesarTest
+..... password: ciscousa45
+
+[student@workstation DO288-apps]$ vim /home/student/DO288-apps/app-config/app.js
+........
+// read in the APP_MSG env var
+var msg = process.env.APP_MSG;  ----------> CHECK THIS
+...output omitted...
+// Read in the secret file
+fs.readFile('/opt/app-root/secure/myapp.sec', 'utf8', function (secerr,secdata) { ----> CHECK THIS
+...output omitted...
+......
+
+2.- Deploy App within a project
+--------
+[student@workstation DO288-apps]$ source /usr/local/etc/ocp4.config
+[student@workstation DO288-apps]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation DO288-apps]$ oc new-project ${RHT_OCP4_DEV_USER}-app-config
+[student@workstation DO288-apps]$ oc new-app --as-deployment-config --name myapp  --build-env npm_config_registry=http://${RHT_OCP4_NEXUS_SERVER}/repository/nodejs  nodejs:12~https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps#app-config  --context-dir app-config
+[student@workstation DO288-apps]$ oc logs -f bc/myapp
+
+3.- Verify Deployment
+--------
+[student@workstation DO288-apps]$ oc get pods
+[student@workstation DO288-apps]$ oc expose svc myapp
+[student@workstation DO288-apps]$ oc get route
+[student@workstation DO288-apps]$ curl  http://myapp-${RHT_OCP4_DEV_USER}-app-config.${RHT_OCP4_WILDCARD_DOMAIN}
+
+4.- Create ConfigMap + Secret
+--------
+[student@workstation DO288-apps]$ oc create configmap myappconf  --from-literal APP_MSG="Test Message"
+[student@workstation DO288-apps]$ oc describe cm/myappconf
+[student@workstation DO288-apps]$ cat /home/student/DO288-apps/app-config/myapp.sec
+[student@workstation DO288-apps]$ oc create secret generic myappfilesec  --from-file /home/student/DO288-apps/app-config/myapp.sec
+[student@workstation DO288-apps]$ oc get secret/myappfilesec -o json
+
+5.- Apply  ConfigMap + Secret
+--------
+[student@workstation ~]$ oc set env dc/myapp  --from configmap/myappconf
+[student@workstation DO288-apps]$ oc set volume dc/myapp --add  -t secret -m /opt/app-root/secure  --name myappsec-vol --secret-name myappfilesec
+
+6.- Verify redeployment
+--------
+[student@workstation DO288-apps]$ oc status
+[student@workstation DO288-apps]$ oc get pods
+[student@workstation DO288-apps]$ oc rsh myapp-3-wzdbh env | grep APP_MSG
+[student@workstation DO288-apps]$ curl  http://myapp-${RHT_OCP4_DEV_USER}-app-config.${RHT_OCP4_WILDCARD_DOMAIN}
+
+7.- Modify Config Map + Redeploy + Verify
+--------
+[student@workstation DO288-apps]$ oc edit cm/myappconf
+......
+...output omitted...
+apiVersion: v1
+data:
+ APP_MSG: Changed Test Message  -----> CHANGE THIS
+kind: ConfigMap
+...output omitted...
+
+
+[student@workstation DO288-apps]$ oc describe cm/myappconf
+.......
+Name: myappconf
+...output omitted...
+Data
+====
+APP_MSG:
+----
+Changed Test Message
+...output omitted...
+.....
+
+[student@workstation DO288-apps]$ oc rollout latest dc/myapp
+[student@workstation DO288-apps]$ oc get pods
+[student@workstation DO288-apps]$ curl http://myapp-${RHT_OCP4_DEV_USER}-app-config.${RHT_OCP4_WILDCARD_DOMAIN}
+
+8.- Delete project
+--------
+[student@workstation DO288-apps]$ oc delete project  ${RHT_OCP4_DEV_USER}-app-config
+
+9.- Finish
+--------
+[student@workstation ~]$ lab app-config finish
+
+----------
+LAB - Designing Containerized Applications for OpenShift
+----------
+
+### REQUIREMENTS
+# App name= elvis
+# Config Map= appconfig
+# Project name: andepiel45-hotmail-com-design-container
+# Route: elvis-andepiel45-hotmail-com-design-container.apps.cluster.domain.example.com/api/hello
+# GIT:  https://github.com/CesarTest/DO288-apps/hello-java
+# JAR: https://github.com/RedHatTraining/DO288-apps/releases/download/OCP-4.1-1/hello-java.jar
+###
+
+0.- Start
+--------
+[student@workstation ~]$ lab design-container start
+
+1.- Create GIT Branch
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ cd DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+[student@workstation DO288-apps]$ git checkout -b design-container
+[student@workstation DO288-apps]$ git push -u origin design-container
+..... username: CesarTest
+..... password: ciscousa45
+
+[student@workstation DO288-apps]$ cat /home/student/DO288-apps/hello-java/Dockerfile 
+
+2.- Deploy App within a Project
+--------
+[student@workstation DO288-apps]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation DO288-apps]$ oc new-project  andepiel45-hotmail-com-design-container
+[student@workstation DO288-apps]$ oc new-app --as-deployment-config --name elvis  https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps#design-container  --context-dir hello-java
+[student@workstation DO288-apps]$ oc logs -f elvis-1-build
+
+3.- Detect the error, Permissions
+--------
+[student@workstation DO288-apps]$ oc logs -f elvis-1-69vmz
+....
+app.sh permission denied
+....
+
+[student@workstation DO288-apps]$ vim /home/student/DO288-apps/hello-java/Dockerfile 
+....
+user add wildfly -u 1001 -g root && \ ---> CHANGE THIS
+      
+user chown -R wildfly:root /opt/app-root && \ ---> CHANGE THIS
+    
+....
+[student@workstation DO288-apps]$ cd /home/student/DO288-apps/hello-java
+[student@workstation container-build]$ git commit -a -m "Changed Dockerfile to add Widlfly user in root group"
+[student@workstation container-build]$ git push
+[student@workstation container-build]$ oc start-build elvis
+[student@workstation ~]$ curl  http://elvis-${RHT_OCP4_DEV_USER}-design-container.${RHT_OCP4_WILDCARD_DOMAIN}/api/hello
+
+
+7.- Expose service
+--------
+[student@workstation container-build]$ oc expose svc/elvis 
+
+8.- Config Maps
+--------
+[student@workstation ~]$ oc create cm appconfig  --from-literal APP_MSG="Elvis lives"
+[student@workstation ~]$ oc describe cm/appconfig
+[student@workstation ~]$ oc set env dc/elvis --from cm/appconfig
+
+9.- Verification
+--------
+[student@workstation ~]$ oc status
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ oc rsh elvis-3-ks1np env | grep APP_MSG
+[student@workstation ~]$ curl  http://elvis-${RHT_OCP4_DEV_USER}-design-container.${RHT_OCP4_WILDCARD_DOMAIN}/api/hello
+
+10.- Finish
+--------
+[student@workstation ~]$ lab design-container grade
+[student@workstation ~]$ lab design-container finish

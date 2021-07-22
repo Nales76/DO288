@@ -1,0 +1,110 @@
+APP PARQUES NACIONALES		SOLUCIÓN		Last Update: 17-Junio-2021
+======================
+
+En el proyecto "<usuario>-parks", se va a crear una app a partir de la plantilla que se puede obtener de:
+
+https://raw.githubusercontent.com/lordofthejars/nationalparks-py/master/ose3/application-template.json
+
+Crear la plantilla en el proyecto y modificarla para que haya dos parámentros obligatorios: el nombre de la app y la ruta.
+Esto quiere decir que si se usa la plantilla sin dar ambos parámetros, el comando oc new-app debe fallar.
+
+Todos los recursos creados con la plantilla sólo tendrán un label: "application=nationalparks".
+
+Además, en el deploymentConfig de Mongo, se debe usar un ISTag "mongodb:3.2", con lo que habrá que añadir a la plantilla,
+el IS "mongodb" con el ISTag "mongodb:3.2" que referencia a:
+
+registry.redhat.io/rhscl/mongodb-32-rhel7
+
+Desplegar la app procesando la plantilla donde el nombre de la app es "parks" y la ruta estará en la URL: <usuario>-parks.<dominio-ocp>.
+
+Una vez esté la app funcionando, en la ruta se ve el mensaje "Welcome to the National Parks data service." y en el path /ws/data/all se ven los datos de la BBDD.
+
+
+SOLUCIÓN
+=========
+
+0.- Hago login en el clúster OCP:
+
+	oc login -u <usuario> -p <password> <MASTER-API>
+
+1.- Creo el proyecto:
+
+	oc new-project <usuario>-parks
+
+2.- Obtengo la plantilla:
+
+	wget https://raw.githubusercontent.com/lordofthejars/nationalparks-py/master/ose3/application-template.json
+
+3.- Crear el recurso plantilla en el proyecto:
+
+	oc create -f application-template.json
+	oc get template					-> sale la plantilla "nationalparks-py"
+
+4.- Editar la plantilla creada con los cambios pertinentes:
+
+	oc edit template nationalparks-py	y cambio:
+
+  en el bloque "parameters" elimino la línea "required: true" de todos los parámetros y en el parámetro "APPLICATION_NAME", elimino la línea de "value" y en el parámetro "APPLICATION_HOSTNAME" añado la línea:   "required: true"
+
+  en el bloque "labels" sólo aparece esto:
+	"application": "nationalparks"
+
+ en el bloque "objects", encima del ImageStream de la app, añado el IS de mongoDB así:
+ ......
+- apiVersion: v1     
+  kind: ImageStream  
+  metadata:          
+    name: mongodb    
+  spec:              
+    lookupPolicy:    
+      local: false   
+    tags:            
+    - from:          
+        kind: DockerImage
+        name: registry.redhat.io/rhscl/mongodb-32-rhel7
+      importPolicy: {}
+      name: "3.2"    
+      referencePolicy:
+        type: Source 
+  .....
+
+y modifico el DC de mongodb para que quede de la siguiente manera:
+   .......
+      from:        
+          kind: ImageStreamTag
+          name: mongodb:3.2
+      type: ImageChange
+    - type: ConfigChange
+  ........
+
+  verifico:
+
+	oc new-app nationalparks-py		
+    ó
+	oc process nationalparks-py 
+
+ ambos procesados deben fallar, dice que necesita dos parámetros obligatorios -> ¡Bien!
+
+5.- Creo los recursos usando la plantilla:
+
+	oc new-app nationalparks-py -p APPLICATION_HOSTNAME=<usuario>-parks.<dominio-ocp> -p APPLICATION_NAME=parks
+
+   Una vez que el pod de la BBDD MongoDB y de la app están running:
+
+	oc get endpoints 		-> veo que ambos servicios tienen endpoints
+
+NOTA: En algún momento veré un pod de "post-hook", en el primer despliegue de la app, se alimenta la BBDD con el fichero "nationalparks.json".
+      Esto es porque en el DC de la app, hay un Post-deployment hook configurado que hace una llamada a la API de la app en /ws/data/load, 
+      realizando dicha carga de datos.
+
+6.- Accedo al a ruta de la app:
+
+	oc get route			-> veo la ruta creada <usuario>-parks.<dominio_ocp>
+
+	curl parks.<dominio_ocp>	-> veo mensaje "Welcome to the National Parks data service."
+
+	curl -s parks.<dominio_ocp>/ws/data/all | python -m json.tool  -> Veo datos BBDD
+
+------------------------------------------------------------------------------
+
+Ref.: https://github.com/lordofthejars/nationalparks-py

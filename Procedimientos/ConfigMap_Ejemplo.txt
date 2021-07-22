@@ -1,0 +1,88 @@
+EJEMPLO DE USO DE UN CM			Last Update: 16-dic-2020 14:34
+------------------------
+
+Se va a levantar un pod con un servidor web Nginx.
+El document root del Nginx está en /usr/share/nginx/html siendo el fichero principal el llamado "index.html"
+
+PASOS:
+
+Creo proyecto:
+
+	oc new-project <usuario>-nginx
+
+Creo un IS que apunta a la IC de Quay de nginx de Red Hat Training:
+
+	oc import-image hello-world --from quay.io/redhattraining/hello-world-nginx --confirm
+
+Levanto un pod basado en ese IS:
+
+	oc new-app --as-deployment-config --name hello -i hello-world
+
+ entro al pod:
+
+	oc rsh <pod> /usr/share/nginx/html/		-> veo varios ficheros: 404.html, 50x.html, index.html, nginx-logo.png, poweredby.png
+
+Creo la ruta:
+
+	oc expose svc hello
+
+Curl a la ruta: 
+
+	curl $(oc get route --no-headers | tr -s ' ' ' ' | cut -d ' ' -f2)
+
+  Veo el mensaje: "Hello, world from nginx!"
+
+Creo un fichero llamado index.html con el contenido:
+
+---------------------------------------------------------
+<html>
+        <head><title>Hola Caracola</title></head>
+        <body><h1>HOLA CARACOLA</h1></body>
+</html>
+---------------------------------------------------------
+
+Creo un cm para almacenar el fichero:
+
+	oc create cm index --from-file=index.html
+
+veo su contenido:
+
+	oc describe cm index
+
+se lo inyecto al DC:
+
+	oc set volumes dc/hello --add --type configmap --configmap-name index --mount-path=/usr/share/nginx/html --name index-vol
+
+  (si no se pone nombre al volumen con --name, genera uno)
+
+ Ahora el curl muestra el nuevo contenido:
+
+	curl $(oc get route --no-headers | tr -s ' ' ' ' | cut -d ' ' -f2)
+ 
+ vemos el directorio de antes:
+
+	oc rsh <pod> /usr/share/nginx/html/		-> solo veo un fichero llamado index.html!!!!
+
+ vuelvo al anterior despliegue:
+
+	oc rollback dc/hello
+
+ Ahora el curl funciona con el contenido original:
+
+	curl $(oc get route --no-headers | tr -s ' ' ' ' | cut -d ' ' -f2)
+	
+
+ Pongo bien el volumen:
+
+	oc set volumes dc/hello --add --type configmap --configmap-name index --mount-path=/usr/share/nginx/html/index.html --sub-path=index.html --name index-vol --overwrite
+
+ Ahora el curl funciona con el contenido nuevo:
+
+	curl $(oc get route --no-headers | tr -s ' ' ' ' | cut -d ' ' -f2)
+
+vemos el directorio de antes:
+
+	oc rsh <pod> /usr/share/nginx/html/		->  veo varios ficheros: 404.html, 50x.html, index.html, nginx-logo.png, poweredby.png
+
+FIN
+

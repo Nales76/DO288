@@ -1,0 +1,24 @@
+PARA USAR EN S2I UN CÓDIGO FUENTE EN UN REPO GIT CONFIGURADO COMO PRIVADO		Last Update: 13-Nov-2020
+==========================================================================	
+
+Si tengo un repositorio Git configurado como privado, tengo que darle a OCP las credenciales
+para que el pod del build pueda hacer el clonado del código.
+Pasos:
+
+1.- Creo en el proyecto un secret con las credenciales de acceso al git:
+
+oc create secret generic <secret_name> \
+    --from-literal=username=<user_GIT> \
+    --from-literal=password=<password_GIT> \
+    --type=kubernetes.io/basic-auth
+
+2.- Le digo al BC que lo use para hacer el "fetch" del código fuente:
+
+ 	oc set build-secret --source bc/<nombre-build> <nombre-secret>
+
+3.- Arranco una nueva construcción ya que la anterior falló al no tener las credenciales:
+
+	oc start-build <nombre-build>
+
+
+Ref.: https://docs.openshift.com/container-platform/4.5/builds/creating-build-inputs.html#builds-adding-source-clone-secrets_creating-build-inputs

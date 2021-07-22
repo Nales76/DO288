@@ -1,0 +1,280 @@
+EJERCICIO TOMCAT - PARTE 2		- SOLUCIÓN		Last Update: 15-Julio-2021
+===========================
+
+INTRODUCCIÓN
+------------
+* Apache Tomcat
+Apache Tomcat (o, sencillamente, Tomcat) es un contenedor de servlets que se puede usar para compilar y ejecutar aplicaciones web realizadas en Java. 
+Implementa y da soporte tanto a servlets como a páginas JSP (Java Server Pages) o Java Sockets.
+
+ Para más info ver: https://es.wikipedia.org/wiki/Tomcat
+
+* Consola de gestión Tomcat
+
+Es una aplicación web, instalada en el contexto /manager que soporta las funciones de:
+
+	- desplegar una app nueva desde un fichero war
+	- desplegar una app nueva en un contexto específico desde el FS del sistema
+	- Listar las apps web desplegadas y ver las sesiones activas de esas apps
+	- Recargar una app web existente para reflejar los cambios producidos en los dirs:
+		/WEB-INF/classes o /Web-INF/lib
+	- Listar los valores de las propiedades de JVM y del S.O.
+	- Listar los recursos JNDI para usar en herramientas de despliegue que preparan los
+	 elementos <ResourceLink> que están en el bloque <Context> del descriptor de depliegue
+	- Arrancar una app parada
+	- Parar una app existente sin quitarla de los despliegues
+	- Quitar de los despliegues una app web y borrar su directorio base de documento
+
+Se usa para desplegar una nueva app web o quitar una existente sin necesidad de reiniciar el contenedor de servlets.
+
+ENUNCIADO
+---------
+
+Usando la IC de tomcat que tiene el usuario en Quay: (PARTE 1 del ejercicio)
+
+PASOS A REALIZAR:
+
+1.- Clonar/Fork el código fuente que está en:
+
+	https://github.com/openshiftdemos/os-sample-java-web.git
+
+ en el GitHub del usuario.
+
+2.- Desplegar la aplicación cuyo código fuente está en el GitHub del usuario con los requisitos:
+
+ - Usar el usuario developer proporcionado para el clúster OCP y el proyecto "<usuario_OCP>-tomcat".
+
+ - En dicho proyecto, usar un secret llamado "quaycreds" para almacenar las credenciales de Quay. Dichas credenciales están en las variables de entorno "QUAY_USER" y "QUAY_PASSWD".
+
+ - Crear un IS llamado "tomcat" en el proyecto que contenga el ISTag que apunte a la IC de Quay del usuario. 
+
+ - Todos los recursos creados deben tener la etiqueta "app=mijava"
+
+ - Crear una ruta para la app y utilizarla para ver su funcionamiento.
+
+3.- Modificar la aplicación para que el mensaje esté en español y volver a desplegarla.
+
+4.- Configurar en GitHub un webhook para que cada vez que se cambie el código en GitHub se despliegue automáticamente la nueva versión de la app.
+
+5.- Acceder a la consola de Tomcat en la ruta de la app /manager. 
+
+    Para que no de un 403 (Access Denied) al no permitir conexiones que no sean desde localhost, 
+    debo modificar ciertos ficheros de configuración "secure-mgmt-console.sh" y "context.xml" de la aplicación.
+    Las modificaciones a realizar son:
+
+   En el primer fichero que está en "/opt/jws-5.3/tomcat/bin/launch/secure-mgmt-console.sh", debo modificar la línea 13 con:
+
+	sed -i -e"s|</tomcat-users>|\n<role rolename=\"manager-gui\"/>\n<user username=\"${JWS_ADMIN_USERNAME}\" password=\"${JWS_ADMIN_PASSWORD}\" roles=\"manager-gui\"/>\n</tomcat-users>|" $JWS_HOME/conf/tomcat-users.xml
+
+   El segundo fichero que está en "/opt/jws-5.3/tomcat/webapps/manager/META-INF/context.xml", debo modificar en las líneas 19 y 23:
+   comentar las Valve con <<!-- y después del fin del allow poner --> o directamente eliminar dichas directivas con su configuración.
+
+ Además, debo crear las variables de entorno "JWS_ADMIN_USERNAME" y "JWS_ADMIN_PASSWORD" ambas con el valor "jwsadmin" y "SCRIPT_DEBUG" con valor "true".
+
+6.- Desde la consola de Tomcat, desplegar la app que se proporciona en el fichero war "EjemploPruebaCarga.war" e intentar acceder desde un navegador a esta app. 
+  Probar con los usuarios y passwords de la app: 
+
+	pepe/pepe123, juan/juan123, roberto/roberto123 o chonto/chonto123.
+
+7.- Eliminar el proyecto.
+
+
+SOLUCIÓN
+=========
+
+1.- En un navegador, entrar en https://github.com y logarse con el usuario y password. En el mismo navegador, abrir la URL de la app: 
+	https://github.com/openshiftdemos/os-sample-java-web.git 
+
+   pulsar en "Fork" (a la derecha, en el medio de la pantalla).
+
+  Ahora el código fuente está en: https://github.com/<USUARIO-GITHUB>/os-sample-java-web
+ 
+2.- Desplegar la app:
+
+ 2.1.- Hago login en el clúster OCP:
+
+	oc login -u <usuario_OCP> -p <password> <api>
+
+ 2.2.- Creo el proyecto:
+
+	oc new-project <usuario_OCP>-tomcat
+
+ 2.3.- Creo el secret para almacenar las credenciales de acceso a Quay:
+
+	oc create secret docker-registry quaycreds --docker-server quay.io --docker-username=${QUAY_USER} --docker-password=${QUAY_PASSWD}
+
+  verifico lo creado:
+
+	oc get secret quaycreds
+	oc get secret quaycreds -o yaml
+
+ 2.4.- Creo el IS que apunta a la IC:
+
+	oc import-image --confirm tomcat --from quay.io/${QUAY_USER}/tomcat
+
+  verifico:
+
+	oc describe is tomcat
+
+ 2.5.- Creo la app usando el IS creado en el paso anterior:
+
+	oc new-app tomcat:latest~https://github.com/<USUARIO-GITHUB>/os-sample-java-web --name=mijava --as-deployment-config
+
+ 2.6.- Veo la construcción:
+
+	oc logs -f build/mijava-1    ó    oc logs -f bc/mijava
+
+  UPSSSS: Hay un error al hacer el pull de la IC para construir la app, tengo que linkar la SA que usa el pod de construcción (builder) con el secret que tiene las credenciales de Quay:
+
+	oc secrets link builder quaycreds
+
+  y vuelvo a lanzar la construcción:
+	
+	oc start-build mijava
+
+  cuando termina, veo el pod de la app ejecutándose:
+
+	oc get pod
+
+ 2.7.- Creo la ruta:
+
+	oc expose svc mijava
+	oc get route			-> <ruta>
+
+ 2.8.- Veo la app funcionando:
+
+	curl <ruta>
+
+3.- Modifico la app:
+
+ 3.1.- Clono en local el repo Git:
+
+	cd Apps
+	git clone https://github.com/<USUARIO-GITHUB>/os-sample-java-web
+	cd os-sample-java-web
+	vim src/main/webapp/index.jsp    -> Sustituyo el mensaje de "Hello World with OpenShift" por "Hola mundo con OpenShift"
+	git commit -am "Cambio de idioma"
+	git push			+  Poner usuario y password de GitHub
+
+  3.2.- Vuelvo a lanzar la construcción de la app:
+
+	oc start-build mijava
+
+ 3.3.- Monitorizo el cambio en el curl:
+
+	watch -n 10 curl -s <ruta>
+
+4.- Configurar el webhook:
+
+ 4.1.- Veo cual es el webhook de GitHub del bc:
+
+	oc describe bc mijava | grep -A 1 GitHub 		-> veo la URL      
+	oc get bc mijava -o yaml | grep -A 3 triggers		-> veo el secret
+
+  En la URL del webhook de GitHub, cambio <secret> por el valor del secret que he sacado con el segundo comando
+
+
+ 4.2.- En un navegador entro a  https://github.com/<USUARIO-GITHUB>/os-sample-java-web -> "Settings" -> "Webhooks" -> botón "Add webhook", 
+	en el cuadro de texto "Payload URL" pongo la URL del paso anterior con el secret y en "Content type" pongo "application/json" + botón "Add webhook" abajo
+
+ 4.3.- Compruebo cambiando de nuevo el código y veo que se produce una nueva construcción: (puedo hacerlo directamente en la web de GitHub si quiero)
+
+	vim src/main/webapp/index.jsp    -> Sustituyo el mensaje de "Hola mundo con OpenShift" por "Bonjour Monde avec OpenShift"
+	git commit -am "Cambio de idioma"
+	git push			-> Poner usuario y password de GitHub
+
+	oc get build			-> Aparece una nueva construcción 
+
+	watch -n 10 curl -s <ruta>	-> Se ve el cambio del mensaje, ojo que tarda un poco ya que tiene que construir de nuevo la app
+
+5.- Modifico la configuración de la app.
+
+ 5.1.- Copio los ficheros "secure-mgmt-console.sh" y "context.xml" del pod a mi máquina:
+
+	MIPOD=$(oc get pod | grep -i running | cut -d ' ' -f1)
+
+	oc cp $MIPOD:/opt/jws-5.3/tomcat/bin/launch/secure-mgmt-console.sh secure-mgmt-consoleORIG.sh
+
+	oc cp $MIPOD:/opt/jws-5.3/tomcat/webapps/manager/META-INF/context.xml contextORIG.xml
+
+ 5.2.- Hago las modificaciones en los ficheros:
+
+  Modifico el scritp sh en otro fichero:
+
+	cp secure-mgmt-consoleORIG.sh secure-mgmt-console.sh
+	vim secure-mgmt-console.sh    -> línea 13 cambiar por
+
+	 sed -i -e"s|</tomcat-users>|\n<role rolename=\"manager-gui\"/>\n<user username=\"${JWS_ADMIN_USERNAME}\" password=\"${JWS_ADMIN_PASSWORD}\" roles=\"manager-gui\"/>\n</tomcat-users>|" $JWS_HOME/conf/tomcat-users.xml
+
+ Modifico el xml en otro fichero:
+
+	cp contextORIG.xml context.xml
+	vim context.xml   -> eliminar las línea 19, 20 y 23 
+
+ 5.3.- Creo un CM para "secure-mgmt-console.sh" y otro para "context.xml":
+
+	oc create configmap mgmtsecure --from-file=secure-mgmt-console.sh
+	oc create configmap mgmtcontext --from-file=context.xml
+
+ 5.4.- Desactivo el trigger de cambio de configuración en el DC, ya que voy a hacer varios cambios seguidos:
+ 	
+	oc set trigger dc/mijava --from-config --remove
+
+ 5.5.- Creo los volúmenes para los CM:
+
+	oc set volume dc/mijava --add --name=mgmtsecure --configmap-name=mgmtsecure --default-mode=0777 --mount-path=/opt/jws-5.3/tomcat/bin/launch/secure-mgmt-console.sh --sub-path=secure-mgmt-console.sh
+
+	oc set volume dc/mijava --add --name=mgmtcontext --configmap-name=mgmtcontext --default-mode=0777 --mount-path=/opt/jws-5.3/tomcat/webapps/manager/META-INF/context.xml --sub-path=context.xml
+
+ verifico con:
+
+	oc set volumes dc/mijava --all   ó   oc describe dc/mijava
+
+ 5.6.- Creamos las variables de entorno "JWS_ADMIN_USERNAME", "JWS_ADMIN_PASSWORD" y "SCRIPT_DEBUG":
+
+	oc set env dc/mijava --overwrite JWS_ADMIN_USERNAME=jwsadmin JWS_ADMIN_PASSWORD=jwsadmin SCRIPT_DEBUG=true
+
+ verifico las variables:
+	
+	oc set env dc/mijava --list  ó   oc describe dc/mijava
+
+ 5.7.- Activo trigger de nuevo:
+
+	oc set trigger dc/mijava --from-config  
+
+   y se produce un nuevo despliegue, verifico el nuevo despliegue del pod:
+
+	oc get pod
+
+ 5.8.- En un navegador accedo a <ruta>/manager 
+
+  Si sigo viendo error 403 -> error en algún fichero, cambiar el fichero, escalar a 0 el DC mijava, eliminar el cm del fichero erróneo y crearlo de nuevo y escalar a 1 el dc mijava.
+
+ Cuando esté bien desplegado, en la ruta /management pide:
+	Username: jwsadmin
+	Password: jwsadmin
+	
+ y ya tengo la consola para desplegar apps en ese tomcat.
+
+6.- Despliego la app en el Tomcat una vez obtenido el fichero "EjemploPruebaCarga.war"
+
+   Desde el manager de Tomcat, en "WAR file to deploy", doy al botón "Choose file" y selecciono el fichero war bajado; pulso botón "Deploy".
+
+   Veo los logs del pod de Tomcat para ver en que contexto me despliega la app:
+
+	MIPOD=$(oc get pods | grep Running | cut -d ' ' -f1)
+	oc logs -f $MIPOD					-> Veo que el contexto es "EjemploPruebaCarga"
+ 
+  Accedo desde un navegador a la app en la ruta del Tomcat en "/EjemploPruebaCarga" y accedo con uno de los usuarios: pepe/pepe123, juan/juan123, roberto/roberto123 o chonto/chonto123.
+
+7.- Elimino mi proyecto:
+
+	oc delete project tomcat
+
+FIN
+
+
+REFS.:
+
+	https://developers.redhat.com/blog/2020/07/01/install-apache-tomcat-and-deploy-a-java-web-application-on-red-hat-openshift/
+

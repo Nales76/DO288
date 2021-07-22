@@ -1,0 +1,77 @@
+EJERCICIO TORRES DE HANOI	- SOLUCIÓN			Last Update: 4-Octubre-20
+==========================
+
+Se va a desplegar una aplicación en JavaScript que permite jugar a las Torres de Hanoi. 
+
+
+1.- Se hará un fork del código fuente de:
+
+	https://github.com/AYIDouble/Tower-of-Hanoi-JavaScript
+
+   en el usuario Git del alumno.
+
+2.- Usando el usuario de OCP "developer", se desplegará en el clúster OpenShift la app del Git del usuario en el proyecto "torres-hanoi" donde todos los recursos tendrán el nombre "hanoi" y a etiqueta "juego" con valor "torres-hanoi"
+
+3.- Se creará la ruta llamada "torres" en la URL "torres-hanoi.<dominio-ocp>".
+
+4.- Eliminar el proyecto "torres-hanoi"·
+
+NOTA: El juego, en su forma más tradicional, consiste en tres postes verticales. En uno de los postes se apila un número indeterminado de discos perforados por su centro (elaborados de madera), que determinará la complejidad de la solución. Por regla general se consideran siete discos. Los discos se apilan sobre uno de los postes en tamaño decreciente de abajo a arriba. No hay dos discos iguales, y todos ellos están apilados de mayor a menor radio -desde la base del poste hacia arriba- en uno de los postes, quedando los otros dos postes vacíos. El juego consiste en pasar todos los discos desde el poste ocupado (es decir, el que posee la torre) a uno de los otros postes vacíos. Para realizar este objetivo, es necesario seguir tres simples reglas:
+
+ - Solo se puede mover un disco cada vez y para mover otro los demás tienen que estar en postes.
+ - Un disco de mayor tamaño no puede estar sobre uno más pequeño que él mismo.
+ - Solo se puede desplazar el disco que se encuentre arriba en cada poste.
+
+Existen diversas formas de llegar a la solución final, todas ellas siguiendo estrategias diversas.
+
+Con 3 discos, el puzzle puede ser resuelto en 7 movimientos. El número mínimo de movimientos es de 2^n − 1, donde n es el número de discos.
+
+SOLUCIÓN
+========
+
+1.- Desde un navegador se accede a GitHub con las credenciales correspondientes y accede a la URL:
+
+	https://github.com/AYIDouble/Tower-of-Hanoi-JavaScript
+
+ y pulso en "Fork".
+
+2.- Desplegar la app en OpenShift:
+
+  hago login:
+
+	oc login -u developer -p ${RHT_OCP4_USER_PASSWORD} ${RHT_OCP4_MASTER_API}
+
+ creo el proyecto:
+
+	oc new-project torres-hanoi
+
+ despliego la app:
+
+	oc new-app httpd~https://github.com/<usuario-GIT>/Tower-of-Hanoi-JavaScript --name=hanoi -l juego=torres-hanoi
+
+3.- Creo la ruta:
+
+ miro cual es el dominio de OpenShift, primero buscando los pods del router (que están en el proyecto openshift-ingress) siendo usuario cluster-admin: 
+
+	oc login -u admin -p ${RHT_OCP4_USER_PASSWORD} ${RHT_OCP4_MASTER_API}
+
+	oc get pod -n openshift-ingress   -> miro como se llama uno de los pods <nombre_pod>
+
+  veo su descripción y busco el valor de la variable ROUTER_CANONICAL_HOSTNAME, ese será el <dominio-ocp>:
+
+	oc describe pod <nombre_pod> -n openshift-ingress  	
+
+  vuelvo al usuario developer: 
+
+	oc login -u developer -p ${RHT_OCP4_USER_PASSWORD} ${RHT_OCP4_MASTER_API}
+
+ usando ese dominio, hago:
+
+	oc expose svc hanoi --name=torres --hostname=torres-hanoi.<dominio-ocp>	
+
+ accedo con un navagor a la URL: torres-hanoi.<dominio-ocp> y veo que funciona.
+
+4.- Elimino el proyecto creado:
+
+	oc delete project torres-hanoi
+

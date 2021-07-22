@@ -1,0 +1,101 @@
+EJERCICIO MS SQL					Last update: 24-Nov-2020
+=================
+
+Con el usuario developer y en el proyecto "<usuario>-mssql":
+
+1.- Desplegar una BBDD Microsoft SQL Server dentro de OpenShift usando la plantilla que está en:
+
+	https://raw.githubusercontent.com/redhat-developer/s2i-dotnetcore-persistent-ex/dotnetcore-3.1-mssql/openshift/mssql2019.json
+
+	usando los valores estándar.
+
+2.- Desplegar la app cuyo código fuente está en:
+
+	https://github.com/redhat-developer/s2i-dotnetcore-persistent-ex
+
+	subdirectorio "app", branch  "dotnetcore-3.1-mssql" 
+
+  Esta app necesita las variables de entorno "MSSQL_SA_PASSWORD" and "MSSQL_SERVICE_NAME" con la password de acceso a la BBDD y el nombre del servicio de la BBDD. 
+  (PISTA: usar el secret del punto anterior)
+  
+ La App necesita la versión de .NET Core 3.1. Para esto se creará un IS llamado dotnet en el mismo proyecto cuyos tags 3.1 y latest referencien a la IC:
+
+	 "registry.access.redhat.com/ubi8/dotnet-31:3.1"
+
+3.- Acceder a la app y meter los registros:
+
+	Juan, Pedro, Ana y Maria
+
+
+----------
+PASO 1 - DESPLEGAR BASE DE DATOS
+----------
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-mssql --description="Despliegue MS SQL" --display-name="MS SQL"
+[student@workstation ~]$ wget https://raw.githubusercontent.com/redhat-developer/s2i-dotnetcore-persistent-ex/dotnetcore-3.1-mssql/openshift/mssql2019.json
+[student@workstation DO288-apps]$ oc create -f  ~/DO288/labs/mssql/mssql2019.json
+[student@workstation ~]$ oc get template
+[student@workstation ~]$ oc process --parameters mssql2019 
+.......
+ACCEPT_EULA=Y
+.......
+[student@workstation ~]$ OPCIONES='-p ACCEPT_EULA=Y'
+[student@workstation ~]$ oc new-app --template mssql2019  $OPCIONES -o yaml > msql_template.yaml
+[student@workstation clinica-mascotas]$ oc create -f msql_template.yaml
+[student@workstation ~]$ vim mysql_template.yaml
+
+----------
+PASO 2 - DESPLEGAR FRONTAL
+----------
+
+2.1.- Redesplegar usando 'set env'
+-------------
+[student@workstation DO288-apps]$ oc new-app --as-deployment-config --name dotnet-partial https://github.com/redhat-developer/s2i-dotnetcore-persistent-ex#dotnetcore-3.1-mssql  --context-dir app -o yaml > dotnet_partial.yaml
+[student@workstation DO288-apps]$ oc get secret
+[student@workstation DO288-apps]$ oc describe secret/mssql-secret
+[student@workstation DO288-apps]$ oc create -f ./dotnet_partial.yaml
+[student@workstation DO288-apps]$ oc set env dc/dotnet-partial --prefix MSSQL_ --from secret/mssql-secret
+[student@workstation DO288-apps]$ oc rsh dotnet-partial-1-6mrq2 env | grep MSSQL
+[student@workstation DO288-apps]$ oc describe dc/dotnet-partial 
+
+2.2.- Completar .yml y desplegar
+-------------
+[student@workstation DO288-apps]$ oc new-app --as-deployment-config --name dotname-full https://github.com/redhat-developer/s2i-dotnetcore-persistent-ex#dotnetcore-3.1-mssql  --context-dir app -o yaml > dotnet-full.yaml
+[student@workstation DO288-apps]$ vim ./dotnet-fulls.yaml
+.....
+spec:
+   template:
+       spec:
+	      containers:
+		    - env:
+			  - name: MSSQL_SERVICE_NAME 
+                valueFrom: 
+                    secretKeyRef:
+                      name: mssql-secret						 
+				      key: SERVICE_NAME
+
+			  - name: MSSQL_SA_PASSWORD
+                valueFrom: 
+                    secretKeyRef:
+                      name: mssql-secret						 
+				      key: SA_PASSWORD	             
+              image: 					  
+.....
+
+[student@workstation DO288-apps]$ oc create -f ./dotnet_full.yaml
+[student@workstation DO288-apps]$ oc rsh dotname-full-1-6mrq2 env | grep MSSQL
+[student@workstation DO288-apps]$ oc describe dc/dotname-full 
+
+2.3.- Crear Image Stream 
+-------------
+[student@workstation DO288-apps]$ oc import image dotnet:3.1 --from registry.access.redhat.com/ubi8/dotnet-31:3.1 --confirm
+[student@workstation DO288-apps]$ oc tag dotnet:3.1 dotnet:latest --alias
+[student@workstation DO288-apps]$ oc tag dotnet:3.1 registry.access.redhat.com/ubi8/dotnet-31
+
+----------
+PASO 3 - 
+----------
+Meter registros: Juan, Pedro, Ana y Maria
+
+
+

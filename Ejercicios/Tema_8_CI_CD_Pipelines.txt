@@ -1,0 +1,322 @@
+=========================
+TEMA 8 - IMPLEMENTING CONTINOUS DELIVERY & CONTINUOUS INTEGRATION PIPELINES IN OPENSHIFT
+=========================
+
+----------
+GUIDED 1 - Run a Simple Jenkins Pipeline
+----------
+
+0.- Start 
+--------
+[student@workstation ~]$ lab simple-pipeline start
+
+
+1.-  Create project
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc get templates -n openshift | grep jenkins
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-ci-cd
+[student@workstation ~]$ oc new-app --as-deployment-config  jenkins-ephemeral -p MEMORY_LIMIT=2048Mi
+
+
+2.- Edit BuildConfig  
+--------
+[student@workstation ~]$ vim ~/DO288/labs/simple-pipeline/simple-pipeline.yaml
+.......
+kind: "BuildConfig"
+apiVersion: "build.openshift.io/v1"
+metadata:
+ name: "simple-pipeline"  ---------> 1) BuildConfig Name
+spec:
+ source:
+   contextDir: simple-pipeline  ---> 2) Folder from Root GIT
+   git:
+     uri: "https://github.com/yourgituser/DO288-apps" ----> 3) Git URI
+     ref: "simple-pipeline"
+  strategy:
+     jenkinsPipelineStrategy: -----> 4) Strategy 
+     type: JenkinsPipeline   ------> 5)  Type of Build
+.......
+___ Edit
+     uri: "https://github.com/CesarTest/DO288-apps" 
+
+3.- Edit Jenkins File 
+--------
+[student@workstation ~]$ cd DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+[student@workstation DO288-apps]$ git checkout -b simple-pipeline
+[student@workstation DO288-apps]$ git push -u origin simple-pipeline
+[student@workstation DO288-apps]$ cat ~/DO288-apps/simple-pipeline/Jenkinsfile 
+
+4.- Study differences with Jenkins File expected 
+--------
+[student@workstation DO288-apps]$ diff  ~/DO288-apps/simple-pipeline/Jenkinsfile ~/DO288/solutions/simple-pipeline/Jenkinsfile 
+[student@workstation DO288-apps]$ cp  ~/DO288/solutions/simple-pipeline/Jenkinsfile ~/DO288-apps/simple-pipeline/Jenkinsfile  
+
+[student@workstation DO288-apps]$ vim ~/DO288-apps/simple-pipeline/Jenkinsfile 
+......
+// TODO: run this simple pipeline on jenkins 'master' node
+----
+...output omitted...
+agent {
+ node {
+ label 'master'
+ }
+}
+...output omitted...
+
+...output omitted...
+stage('stage 2') {
+ steps {
+ sh 'echo hello from stage 2!'
+ }
+}
+...output omitted...
+
+...output omitted...
+stage('manual approval') {
+ steps {
+ timeout(time: 60, unit: 'MINUTES') {
+ input message: "Move to stage 3?"
+ }
+ }
+}
+...output omitted...
+
+
+[student@workstation DO288-apps]$ cd simple-pipeline
+[student@workstation simple-pipeline]$ git commit -a -m "Completed Jenkinsfile"
+[student@workstation simple-pipeline]$ git push
+[student@workstation simple-pipeline]$ cd ~
+
+5.- Login into Jenkins
+--------
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ oc get route/jenkins -o jsonpath='{.spec.host}{"\n"}'
+[student@workstation ~]$ oc whoami --show-console
+Firefox -> https://jenkins-dgmhgy-ci-cd.apps.eu45.prod.nextcle.com
+-----> Username: dgmhgy
+-----> Password: f8490109bfea43ee9e4b
+-----> Allow seleted permissions
+-----> Manage Jenkins => Configure the System => OpenShift Jenkins Sync => dgmhgy-simple-pipeline => Save
+
+6.- Build from Web Console
+--------
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-simple-pipeline
+[student@workstation ~]$ oc policy add-role-to-user  edit system:serviceaccount:${RHT_OCP4_DEV_USER}-ci-cd:jenkins  -n ${RHT_OCP4_DEV_USER}-simple-pipeline
+
+[student@workstation ~]$ oc create  -f ~/DO288/labs/simple-pipeline/simple-pipeline.yaml
+[student@workstation ~]$ oc get route console -n openshift-console  -o jsonpath='{.spec.host}{"\n"}'
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Projects -> dgmhgy-simple-pipeline 
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Builds -> BuildConfig
+
+[student@workstation ~]$ oc start-build simple-pipeline
+
+7.- View Execution Progress in Web Console
+--------
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Builds -> Build -> dgmhgy-simple-pipeline-1 -> Input Required -> Paused for Input -> Proceed
+
+8.- View details of execution in Jenkins
+--------
+Firefox -> https://jenkins-dgmhgy-ci-cd.apps.eu45.prod.nextcle.com -> My View -> dgmhgy-simple-pipeline -> dgmhgy-simple-pipeline/pipeline
+
+9.- Delete project
+--------
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-simple-pipeline
+
+10.- Finish 
+--------
+[student@workstation ~]$ lab simple-pipeline finish
+
+----------
+GUIDED 2 - Create and Run a Jenkins Pipeline
+----------
+
+0.- Start 
+--------
+[student@workstation ~]$ lab custom-pipeline start
+
+1.- Log in  
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc get pods -n ${RHT_OCP4_DEV_USER}-ci-cd
+
+2.- Create Projects
+--------
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-books-stage
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-books-dev
+
+3.- Edit BuildConfig 
+--------
+[student@workstation ~]$ vim ~/DO288/labs/custom-pipeline/custom-pipeline-bc.json
+........
+{
+ "kind": "BuildConfig",
+ "apiVersion": "build.openshift.io/v1",
+ "metadata": {
+    "name": "custom-pipeline"    ---------------------------------> 1) BuildConfig Name
+ },
+ "spec": {
+    "source": {
+       "type": "Git",
+       "git": {
+          "uri": "https://github.com/CesarTest/DO288-apps.git", ---> 2) GIT URL (CHANGE)
+          "ref": "custom-pipeline"  -------------------------------> 3) Branch Name
+        },
+        "contextDir": "books" -------------------------------------> 4) Folder Name
+    },
+    "strategy": {
+        "type": "JenkinsPipeline",
+        "jenkinsPipelineStrategy": {
+           "jenkinsfilePath": "jenkins/Jenkinsfile" ---------------> 5) Strategy
+        }
+    }
+}
+.......
+
+4.-  Push to changes to GIT
+--------
+[student@workstation ~]$ cd DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+[student@workstation DO288-apps]$ git checkout -b custom-pipeline
+[student@workstation DO288-apps]$ git push -u origin custom-pipeline
+[student@workstation DO288-apps]$ cat ~/DO288-apps/books/jenkins/Jenkinsfile
+
+5.- Edit Jenkins file  
+--------
+[student@workstation DO288-apps]$ diff ~/DO288/solutions/custom-pipeline/Jenkinsfile ~/DO288-apps/books/jenkins/Jenkinsfile 
+[student@workstation DO288-apps]$ vim  ~/DO288-apps/books/jenkins/Jenkinsfile 
+
+[student@workstation DO288-apps]$ cp ~/DO288/solutions/custom-pipeline/Jenkinsfile  ~/DO288-apps/books/jenkins/Jenkinsfile 
+[student@workstation DO288-apps]$ vim ~/DO288-apps/books/jenkins/Jenkinsfile 
+.....
+    environment : {
+	    DEV_PROJECT: dgmhgy-books-dev
+		STAGE_PROJECT: dgmhgy-books-stage
+		API_GIT_URL: https://github.com/CesarTest/DO288-apps
+		NEXUS_SERVER: https://nexus-common.apps.eu45.prod.nextcle.com/repository/nodejs
+
+		
+	}
+.....
+
+
+[student@workstation DO288-apps]$ cd ~/DO288-apps/books
+[student@workstation books]$ git commit -a  -m "Completed Jenkinsfile for books microservice"
+[student@workstation books]$ git push
+[student@workstation books]$ cd 
+
+6.- Add project to Jenkins
+--------
+[student@workstation ~]$ oc get route/jenkins -n ${RHT_OCP4_DEV_USER}-ci-cd  -o jsonpath='{.spec.host}{"\n"}'
+-----> Username: dgmhgy
+-----> Password: f8490109bfea43ee9e4b
+-----> Allow seleted permissions
+-----> Manage Jenkins => Configure the System => OpenShift Jenkins Sync => dgmhgy-simple-pipeline dgmhgy-books-dev => Save
+
+7.- Run Build from Weh Console
+--------
+[student@workstation ~]$ oc project ${RHT_OCP4_DEV_USER}-books-dev
+[student@workstation ~]$ oc policy add-role-to-user  edit system:serviceaccount:${RHT_OCP4_DEV_USER}-ci-cd:jenkins  -n ${RHT_OCP4_DEV_USER}-books-dev
+[student@workstation ~]$ oc policy add-role-to-user edit system:serviceaccount:${RHT_OCP4_DEV_USER}-ci-cd:jenkins  -n ${RHT_OCP4_DEV_USER}-books-stage
+
+[student@workstation ~]$ oc create  -f ~/DO288/labs/custom-pipeline/custom-pipeline-bc.json
+[student@workstation ~]$ oc get route console -n openshift-console  -o jsonpath='{.spec.host}{"\n"}'
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Projects -> dgmhgy-books-dev
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Builds -> BuildConfig
+ 
+[student@workstation ~]$ oc start-build custom-pipeline
+
+
+8.-  Web Console, view progress
+--------
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Builds -> Builds -> custom-pipeline-1 -> Logs
+....
+...output omitted...
++ cd books
++ npm test
+
+> books@1.0.0 test /tmp/workspace/ ...output omitted...
+> IP=0.0.0.0 PORT=3030 node_modules/.bin/mocha tests/*_test.js
+...output omitted...
+2 passing (138ms)
+ 1 failing
+
+ 1) Books App routes test
+ GET to /authors should return 200:
+ Uncaught AssertionError: expected '{"books":[{"id":1,"name":"James
+ Joyce","dob":1882},{"id":2,"name":"F Scott Fitzgerald","dob":1896},
+{"id":3,"name":"Aldous Huxley","dob":1894},{"id":4,"name":"Vladimir
+ Nabokov","dob":1899},{"id":5,"name":"William Faulkner","dob":1897}]}' to include
+ 'James_Joyce'
+...output omitted...
+
+
+9.- Fix the error  
+--------
+[student@workstation ~]$ vim ~/DO288-apps/books/tests/app_test.js
+.....
+expect(res.text).to.include('James_Joyce');
+-----
+expect(res.text).to.include('James Joyce');
+.....
+
+[student@workstation ~]$ cd ~/DO288-apps/books
+[student@workstation books]$ git commit -a -m "Fixed failed unit test."
+[student@workstation books]$ git push
+[student@workstation books]$ cd ~
+
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Builds -> Builds -> custom-pipeline-2 -> Logs
+.....
+...output omitted...
++ cd books
++ npm run lint
+
+> books@1.0.0 lint /tmp/workspace/ ...output omitted...
+> eslint . --ext .js
+
+...output omitted.../books/routes/authors.js
+ 7:1 error Unexpected var, use let or const instead no-var
+ 7:5 error 'user' is defined but never used no-unused-vars
+...output omitted...
+....
+
+10.- Fix the error 2  
+--------
+[student@workstation books]$ vim ~/DO288-apps/books/routes/authors.js
+......
+var user; -----> DELETE LINE
+......
+
+[student@workstation ~]$ cd ~/DO288-apps/books
+[student@workstation books]$ git commit -a -m "Fixed linting errors."
+[student@workstation books]$ git push
+[student@workstation books]$ cd ~
+[student@workstation ~]$ oc start-build custom-pipeline
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Builds -> Builds -> custom-pipeline-3
+
+11.- Verify deployment
+--------
+[student@workstation ~]$ oc get pods -n ${RHT_OCP4_DEV_USER}-books-dev
+[student@workstation ~]$ oc get pods -n ${RHT_OCP4_DEV_USER}-books-stage
+[student@workstation ~]$ oc get route/books  -n ${RHT_OCP4_DEV_USER}-books-dev -o jsonpath='{.spec.host}{"\n"}'
+
+12.- Continue Pipeline
+--------
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Builds -> Builds -> custom-pipeline-3 -> Inputs required -> Paused for Input -> Proceed (Promote to Stage)
+
+13.- Verify Pipeline Succeed
+--------
+Firefox -> https://console-openshift-console.apps.eu45.prod.nextcle.com -> Builds -> Builds -> custom-pipeline-3
+
+14.- Delete projects
+--------
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-books-dev
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-books-stage
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-ci-cd
+
+15.- Finish 
+--------
+[student@workstation ~]$ lab custom-pipeline finish

@@ -1,0 +1,402 @@
+=========================
+TEMA 10 - COMPRENSIVE REVIEW: RED HAT OEPNSHIFT DEVELOPMENT II: CONTAINERIZING APPLICATIONS
+=========================
+
+###########################
+# OJO: echo -n "Hola"... sin INTRO, para condificar, encriptar, etc.
+###########################
+
+echo -n "trufa" | 
+
+base64 -d .... Decodifica
+base64    .... Codifica
+
+oc set data secret generic --from-file nombre=/home/cesar/misdatos.txt 
+oc set data secret generic --from-file nombre-
+
+
+
+----------
+LAB 1 - Designing a Container Image for OpenShift
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab review-dockerfile start
+
+1.- Edit Dockerfile 
+--------
+[student@workstation ~]$ cd DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+[student@workstation DO288-apps]$ git checkout -b review-dockerfile
+[student@workstation DO288-apps]$ git push -u origin review-dockerfile
+[student@workstation DO288-apps]$ vim ~/DO288-apps/todo-frontend/Dockerfile 
+.....
+FROM registry.access.redhat.com/ubi8:8.0
+
+LABEL version="1.0" \
+ description="To Do List application front-end" \
+ creationDate="2017-12-25" \
+ updatedDate="2019-08-01"
+
+ENV BACKEND_HOST=localhost:8081
+
+RUN yum install -y --disableplugin=subscription-manager --nodocs \
+ nginx nginx-mod-http-perl \
+ && yum clean all
+
+COPY nginx.conf /etc/nginx/
+
+RUN touch /run/nginx.pid \
+ && chgrp -R 0 /var/log/nginx /run/nginx.pid \
+ && chmod -R g+rwx /var/log/nginx /run/nginx.pid
+
+COPY src/ /usr/share/nginx/html
+
+EXPOSE 8080
+
+USER 1001
+
+CMD nginx -g "daemon off;"
+.......
+
+
+[student@workstation DO288-apps]$ diff ./todo-frontend ~/DO288/solutions/review-dockerfile/Dockerfile-optimized 
+
+
+2.- Build Image 
+--------
+[student@workstation DO288-apps]$ cd todo-frontend
+[student@workstation todo-frontend]$ sudo podman build -t todo-frontend .
+[student@workstation todo-frontend]$ sudo podman run --name testfrontend  -d -p 8080:8080 todo-frontend
+[student@workstation todo-frontend]$ curl -s localhost:8080 | grep h1
+[student@workstation todo-frontend]$ sudo podman stop testfrontend
+[student@workstation todo-frontend]$ sudo podman rm testfrontend
+[student@workstation todo-frontend]$ git commit -a -m 'Fixed for OpenShift'
+[student@workstation todo-frontend]$ git push
+[student@workstation todo-frontend]$ cd ~
+
+3.- Upload to Quay
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config[student@workstation ~]$ sudo podman login -u ${RHT_OCP4_QUAY_USER} quay.io
+Password: your Quay.io password
+Login Succeeded!
+[student@workstation ~]$ sudo skopeo copy  containers-storage:localhost/todo-frontend  docker://quay.io/${RHT_OCP4_QUAY_USER}/todo-frontend
+
+4.- Create Images Stream
+--------
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-review-common
+[student@workstation ~]$ podman login -u ${RHT_OCP4_QUAY_USER} quay.io
+[student@workstation ~]$ oc create secret generic quayio  --from-file .dockerconfigjson=${XDG_RUNTIME_DIR}/containers/auth.json  --type kubernetes.io/dockerconfigjson
+[student@workstation ~]$ oc import-image todo-frontend --confirm  --reference-policy local  --from quay.io/${RHT_OCP4_QUAY_USER}/todo-frontend
+
+5.- Deploy Application 
+--------
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-review-dockerfile
+[student@workstation ~]$ oc policy add-role-to-group  -n ${RHT_OCP4_DEV_USER}-review-common system:image-puller  system:serviceaccounts:${RHT_OCP4_DEV_USER}-review-dockerfile
+[student@workstation ~]$ oc new-app --as-deployment-config --name frontend  -e BACKEND_HOST=api.example.com  -i ${RHT_OCP4_DEV_USER}-review-common/todo-frontend
+[student@workstation ~]$ oc get pod
+[student@workstation ~]$ oc expose svc frontend
+[student@workstation ~]$ oc get route
+[student@workstation ~]$ curl -s  http://frontend-${RHT_OCP4_DEV_USER}-review-dockerfile.${RHT_OCP4_WILDCARD_DOMAIN} | grep h1
+
+6.- Finish
+--------
+[student@workstation ~]$ lab review-dockerfile grade
+[student@workstation ~]$ lab review-dockerfile finish
+
+----------
+LAB 2 - Containerizing and Deploying a Service
+----------
+
+##################
+# RESTRICTIONS
+#   Project: ${RHT_OCP4_DEV_USER}-review-service
+#   App: tododb 
+#   Labels: 
+##################
+
+
+0.- Start
+--------
+[student@workstation ~]$ lab review-service start
+
+1.- Create Project
+--------
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-review-service
+
+2.- Deploy Database
+--------
+[student@workstation ~]$ oc new-app --as-deployment-config --name tododb  --docker-image registry.access.redhat.com/rhscl/mysql-57-rhel7  -e MYSQL_USER=todoapp  -e MYSQL_PASSWORD=mypass  -e MYSQL_DATABASE=todo
+[student@workstation ~]$ oc status --suggest
+
+3.- Create Secret
+--------
+[student@workstation ~]$ oc create secret generic tododb --from-literal user=todoapp --from-literal password=mypass  --from-literal database=todo  -o yaml > tododb_secret.yaml
+[student@workstation ~]$ oc create -f tododb_secret.yaml
+[student@workstation ~]$ oc delete -f tododb_secret.yaml
+[student@workstation ~]$ oc describe secret tododb
+
+4.- Set Environment
+--------
+[student@workstation ~]$ oc set env dc/tododb --prefix MYSQL_ --from secret/tododb
+
+5.- Create Branch
+--------
+[student@workstation ~]$ cd ~/DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+[student@workstation DO288-apps]$ git checkout -b review-service
+[student@workstation DO288-apps]$ git push -u origin review-service
+
+6.- Deploy Application
+--------
+[student@workstation DO288-apps]$ oc new-app --name=backend --as-deployment-config nodejs:12~https://github.com/CesarTest/DO288-apps#review-service --context-dir=todo-backend --build-env npm_config_registry=http://${RHT_OCP4_NEXUS_SERVER}/repository/nodejs -o yaml > todo-backend.yml
+[student@workstation DO288-apps]$ oc create -f ./todo-backend.yml
+[student@workstation DO288-apps]$ oc delete -f ./todo-backend.yml
+
+7.- Set environment
+--------
+[student@workstation ~]$ oc set env dc/backend --prefix DATABASE_ --from secret/tododb
+[student@workstation ~]$ oc edit dc/todo-backend 
+.... DATABASE_DATABASE => DATABASE_NAME
+[student@workstation ~]$ oc create configmap todoapp --from-literal init=true
+[student@workstation ~]$ oc set env dc/backend --prefix DATABASE_ --from cm/todoapp
+
+8.- Edit Source to Image Scripts
+--------
+[student@workstation ~]$ cat ~/DO288/labs/review-service/lifecycle.sh
+[student@workstation ~]$ mkdir -p ~/DO288-apps/todo-backend/.s2i/bin
+[student@workstation ~]$ cp ~/DO288/labs/review-service/lifecycle.sh  ~/DO288-apps/todo-backend/.s2i/bin/assemble
+[student@workstation DO288-apps]$ oc describe istag nodejs:12 -n openshift | grep io.openshift.s2i.scripts-url
+[student@workstation ~]$ vim  ~/DO288-apps/todo-backend/.s2i/bin/assemble
+....
+#!/bin/bash
+
+echo "Peforming the S2I build..."
+
+#TODO: add call to the standard S2I assemble script
+/usr/libexec/s2i/assemble   ============================================> ADD THIS
+
+rc=$?
+
+if [ $rc -eq 0 ]; then
+ echo "Recording successful build on the life cycle management system..."
+else
+ echo "Not calling the life cycle management system: S2I build failed!"
+fi
+exit $rc
+......
+
+[student@workstation DO288-apps]$ cd ~/DO288-apps/todo-backend
+[student@workstation todo-backend]$ git add .s2i
+[student@workstation todo-backend]$ git commit -m 'Modificando S2I'
+[student@workstation todo-backend]$ git push
+
+9.- Restart Application
+--------
+[student@workstation ~]$ oc set data secret generic --from-literal svc=tododb 
+[student@workstation ~]$ oc set env dc/backend --prefix DATABASE_ --from secret/tododb
+[student@workstation ~]$ oc set env dc/backend --prefix DATABASE_ --from cm/todoapp
+[student@workstation ~]$ oc edit dc/backend 
+.... DATABASE_DATABASE => DATABASE_NAME
+
+10.- Expose route
+--------
+[student@workstation ~]$ oc expose svc/backend --hostname=http://backend-${RHT_OCP4_DEV_USER}-review-service.${RHT_OCP4_WILDCARD_DOMAIN}
+[student@workstation ~]$ curl -s http://backend-${RHT_OCP4_DEV_USER}-review-service.${RHT_OCP4_WILDCARD_DOMAIN}/todo/api/items-count
+
+11.- Finish
+--------
+[student@workstation ~]$ lab review-service grade
+[student@workstation ~]$ lab review-service finish
+
+----------
+LAB 3 - Building and Deploying a Multicontainer Application
+----------
+
+##################
+# RESTRICTIONS
+#   Project: ${RHT_OCP4_DEV_USER}-review-common
+#   App: tododb 
+#   Labels: 
+##################
+
+
+0.- Start
+--------
+[student@workstation ~]$ lab review-multicontainer start
+
+1.- Create the project
+--------
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-review-multicontainer
+
+
+2.- Copy Resources definition file
+--------
+[student@workstation ~]$ cp ~/DO288/labs/review-multicontainer/todo.yaml ~
+[student@workstation ~]$ cp ~/DO288/labs/review-multicontainer/todoapp.yaml  ~/todoapp.yaml
+[student@workstation ~]$ grep '^ kind:' ~/todoapp.yaml
+[student@workstation ~]$ oc process --parameters -f ~/todoapp.yaml
+
+2.- See syntax in Mongo-DB example template
+--------
+[student@workstation ~]$ oc get template -n openshift | grep nodejs-mongodb-example
+[student@workstation ~]$ oc get template nodejs-mongodb-example -n openshift  -o yaml > mongodb-example.yaml
+[student@workstation ~]$ vim todoapp.yaml
+CHANGE PARAMETERS
+......
+-displayName: Secret for webhooks
+ name: SECRET
+ required: true
+ from: '[a-zA-Z0-9]{40}'  -------> ADD THIS LINE
+ generate: expression     -------> ADD THIS LINE
+.....
+-displayName: Flag to initialize (or not) the application database
+ name: CLEAN_DATABASE
+ required: true
+ value: "false"
+.....
+
+CHANGE Secret
+.....
+...output omitted...
+- apiVersion: v1 
+ stringData:                -----> REPLACE 'data' BLOCK WITH THIS              
+    password: ${PASSWORD}
+    user: todoapp           -----> REPLACE 'data' BLOCK WITH THIS
+ kind: Secret
+ metadata:
+ name: tododb
+ type: Opaque
+...output omitted
+
+CHANGE Config MAP
+.....
+-
+ apiVersion: v1
+ data:
+     init: ${CLEAN_DATABASE} ---->  CHANGE THIS 
+ kind: ConfigMap
+...output omitted
+-
+ apiVersion: route.openshift.io/v1
+ kind: Route
+ metadata:
+...output omitted...
+ name: backend
+...output omitted...
+ spec:
+ host: ${BACKEND}  -------> CHANGE THIS
+
+
+CHANGE Deployment Config 
+.....
+kind: DeploymentConfig
+...output omitted...
+ name: frontend
+...output omitted...
+ template:
+...output omitted...
+ spec:
+ containers:
+ - env:
+ - name: BACKEND_HOST
+   value: ${BACKEND}  -----> CHANGE THIS
+ imagePullPolicy: Always
+
+CHANGE FRONTEND Route 
+........
+...output omitted...
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+...output omitted...
+ name: frontend
+...output omitted...
+ spec:
+ host: ${HOSTNAME}
+...output omitted
+
+
+3.- Add probes
+----------------
+[student@workstation ~]$ oc create -f ~/todoapp.yaml
+[student@workstation ~]$ oc process --parameters todoapp
+
+.....
+ apiVersion: v1
+ kind: DeploymentConfig
+ metadata:
+...output omitted...
+ name: backend
+...output omitted...
+ spec:
+...output omitted...
+ template:
+...output omitted...
+ spec:
+ containers:
+...output omitted...
+ terminationMessagePolicy: File
+
+ livenessProbe:
+    httpGet:
+      path: /todo/api/items-count
+      port: 8080
+    initialDelaySeconds: 10
+    timeoutSeconds: 3
+ readinessProbe:
+    httpGet:
+      path: /todo/api/host
+      port: 8080
+    initialDelaySeconds: 10
+    timeoutSeconds: 3
+.......
+
+[student@workstation ~]$ oc project ${RHT_OCP4_DEV_USER}-review-common
+[student@workstation ~]$ oc new-app --dry-run -f ~/todoapp.yaml  -p PASSWORD=x -p HOSTNAME=y -p BACKEND=z 
+
+4.- 
+----------------
+[student@workstation ~]$ oc create -f ~/todoapp.yaml
+[student@workstation ~]$ oc process --parameters todoapp
+
+5.- 
+----------------
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-review-multicontainer
+[student@workstation ~]$ oc policy add-role-to-group -n ${RHT_OCP4_DEV_USER}-review-common system:image-puller  system:serviceaccounts:${RHT_OCP4_DEV_USER}-review-multicontainer
+[student@workstation ~]$ oc new-app ${RHT_OCP4_DEV_USER}-review-common/todoapp  -p PASSWORD=redhat  -p CLEAN_DATABASE=false  -p HOSTNAME=todoui-${RHT_OCP4_DEV_USER}.${RHT_OCP4_WILDCARD_DOMAIN}  -p BACKEND=todoapi-${RHT_OCP4_DEV_USER}.${RHT_OCP4_WILDCARD_DOMAIN}
+[student@workstation ~]$ oc logs -f bc/backend
+[student@workstation ~]$ oc get pod
+[student@workstation ~]$ oc get route
+[student@workstation ~]$ curl -siw "\n"  todoapi-${RHT_OCP4_DEV_USER}.${RHT_OCP4_WILDCARD_DOMAIN}/todo/api/items-count
+
+6.- 
+----------------
+[student@workstation ~]$ oc port-forward tododb-1-dvcqm 30306:3306
+[student@workstation ~]$ mysql -h127.0.0.1 -P30306 -utodoapp -predhat todo < ~/DO288/labs/review-multicontainer/todo.sql
+[student@workstation ~]$ oc get pod
+[student@workstation ~]$ curl -siw "\n"  todoapi-${RHT_OCP4_DEV_USER}.${RHT_OCP4_WILDCARD_DOMAIN}/todo/api/items-count
+[student@workstation ~]$ oc get route
+[student@workstation ~]$ lab review-multicontainer grade
+
+7.- 
+----------------
+[student@workstation ~]$ lab review-multicontainer finish
+
+8.- 
+----------------
+[student@workstation ~]$ lab review-multicontainer cleanup
+[student@workstation ~]$ lab review-service cleanup
+[student@workstation ~]$ lab review-dockerfile cleanup
+
+
+
+
+10.- Finish
+--------
+[student@workstation ~]$ lab review-multicontainer grade
+[student@workstation ~]$ lab review-multicontainer finish

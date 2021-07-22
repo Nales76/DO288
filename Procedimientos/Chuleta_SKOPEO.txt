@@ -1,0 +1,81 @@
+SKOPEO					Last Update: 26-Marzo-2021
+======
+
+El comando skopeo se usa para gestionar imágenes en registries remotos.
+
+* Formato comando skopeo
+  -----------------------
+
+	skopeo <subcomando> [opciones] <ruta>
+
+ donde:
+
+  <subcomando>: 
+
+	copy   	-> para copiar una imagen de un sitio a otro
+	delete	-> para borrar una imágen de un registry
+	inspect	-> para ver los metadatos de una imagen directamente en el registry, sin necesidad de bajar dicha imagen a caché local
+
+  <opciones>: 
+	
+	--creds <usuario>:<password> 	->  dar las credenciales del registry
+	--src-tls-verify=false		-> cuando el registry de origen no va con TLS (si no se pone, por defecto es true)
+	--dest-tls-verify=false		-> cuando el registry de destino no va con TLS (si no se pone, por defecto es true)
+
+  <ruta>: es la URI de ubicación de la imagen a gestionar y debe comenzar por uno de los siguientes esquemas URI:
+	
+	oci			-> cuando la imagen está almacenada en el filesystem local, en un directorio con formato OCI
+	
+	docker			-> cuando la imagen está almacenada en un registry remoto
+
+	containers-storage	-> Cuando está almacenada en la caché local del engine de contenedores
+
+ Ejemplo:
+ 
+  - Ver los metadatos de la imagen de postgresql basada en RHEL 7 almacenada en el registry privado de Red Hat, en el repositorio "rhscl" usando el 
+    usuario "developer1" con password: "MyS3cret":
+
+	skopeo inspect --creds developer1:MyS3cret! docker://registry.redhat.io/rhscl/postgresql-96-rhel7
+
+
+ NOTA: Para evitar dar una password en el terminal, se puede almacenar en una variable de entorno no persistente llamada "password", usando el comando "read": 
+      
+	read -p "PASSWORD: " -s password
+	skopeo inspect --creds developer1:$password docker://registry.redhat.io/rhscl/postgresql-96-rhel7
+
+
+* Publicar/Subir imágenes en un registry remoto
+  ---------------------------------------------
+
+ Con skopeo se pueden copiar imágenes entre registries remotos sin necesidad de pasar dicha imagen a caché local del motor de contenedores. O subir una imagen desde
+ caché o filesystem local a un registry remoto.
+
+ Ejemplos: 
+
+ - Copiar una imagen de la caché local del motor de contenedores al registry remoto Quay.io proporcionando el usuario y password en el registry:
+
+	skopeo copy containers-storage:myimage docker://quay.io/miusuario/miimagen --src-creds=miusuario:$password
+
+ - Copiar una imagen de un directorio con formato OCI en el home del usuario al registry remoto Quay.io proporcionando el usuario y password en el registry:
+
+	skopeo copy oci:/home/user/myimage docker://quay.io/miusuario/miimagen --src-creds=miusuario:$password
+
+ - Copiar una imagen de un registry remoto a otro dando credenciales en ambos registries:
+
+	skopeo copy --src-creds=usuario1:password1 --dest-creds=usuario2:password2 docker://srcregistry.domain.com/repo/imagen1 docker://dstegistry.domain2.com/repo/imagen1
+
+ 
+ NOTA: Por temas de eficiencia, Skopeo no lee o envía las capas de la imagen que ya existen en el destino. Primero se lee el manifiesto de la imagen de origen y 
+       determina qué capas existen ya en el destino y entonces, sólo se copian las capas que no existen.
+       El nombre y tag de la imagen en el origen pueden ser distinto al nombre y tag de la imagen en el destino si así se quiere.
+
+* Borrar imágenes en un registry remoto
+  --------------------------------------
+
+ Se usa:
+
+	skopeo delete docker://registry.example.com/miusuario/miimagen
+
+ y puede llevar las opciones --creds and --tls-verify=false si se necesitan.
+
+

@@ -1,0 +1,121 @@
+APP ESTADIOS MLB		SOLUCIÓN			Last Update: 14-Julio-2021
+================
+
+La MLB es una organización profesional de béisbol (Grandes Ligas de Béisbol) y las más antigua de las ligas mayores profesionales deportivas en los Estados Unidos y Canadá. Conformada por 30 equipos que juegan en la Liga Nacional y en la Liga Americana, con 15 equipos en cada liga. 
+
+Mas info en:   https://es.wikipedia.org/wiki/Anexo:Estadios_de_B%C3%A9isbol_de_las_Grandes_Ligas
+
+Desplegar en el proyecto "<usuario>-estadios" la app que muestra los estadios a partir de la plantilla que está en:
+
+ https://raw.githubusercontent.com/thesteve0/openshift3mlbparks/master/mlbparks-template.json
+
+Crear en el proyecto "<user>-misplantillas" esta plantilla.
+
+SOLUCIÓN
+=========
+1.- Creo el proyecto para alojar la plantilla:
+
+	oc new-project <usuario>-misplantillas
+
+2.- Creo el recurso plantilla en este proyecto:
+
+	oc create -f https://raw.githubusercontent.com/thesteve0/openshift3mlbparks/master/mlbparks-template.json
+
+3.- Creo el proyecto para alojar la app:
+
+	oc new-project <usuario>-estadios
+
+4.- Creo la app a partir de la plantilla:
+
+	oc new-app <usuario>-misplantillas/mlbparks
+
+  ó 
+	oc new-app --template  <usuario>-misplantillas/mlbparks
+
+5.- Veo los pods:
+
+	oc get pod   -> ¡sólo hay pod de mongodb!
+
+6.- Miro la ruta y los endpoints de los servicios:
+
+	oc get route
+	oc get endpoints		-> ¡no hay!
+	
+7.- Miro posibles errores:
+
+	oc get events
+	oc status --suggest
+
+8.- Veo los builds:
+
+	oc get builds -> ¡no hay!
+
+9.- Lanzo el build a ver que pasa:
+
+	oc start-build mlbparks  -> Me dice que la ICConstrucción no está en el proyecto openshift, miro cual es:
+
+	oc describe bc mlbparks -> veo que pone en ISTag de la ICConstrucción: "jboss-eap6-openshift:64" del proyecto "openshift".
+  
+  miro cuales tengo en el proyecto openshift:
+
+	oc get is -n openshift | grep jboss | grep eap   -> veo que es "jboss-eap64-openshift", modifico en el bc	
+		
+	oc edit bc mlbparks -> cambio "jboss-eap6-openshift:64" por "jboss-eap64-opnshift:latest" y se lanza un build automáticamente
+
+10.- Espero hasta que el pod de la app esté running:
+
+	oc get pod -> veo que termina,
+
+   miro ahora los endpoints: oc get endpoints -> ahora si	
+
+ NOTA: Existen dos servicios del mismo DC, uno para la app y otro para verificar si el contenedor está dando servicio (ping) ideal para usar como probe.
+oc 
+11.- Ahora accedo a la ruta desde un navegador y bingo!!!
+
+12.- Debería modifica el nombre del ISTag del BC en la plantilla, para eso, lo ideal sería definir un parámetro que me obligue a meter el
+    nombre del ISTag de JBossEAP 6.4 en el proyecto "openshift":
+
+    oc edit template -n <usuario>-misplantillas
+
+ y cambio el bloque:
+------------------------------------------
+strategy:        
+      sourceStrategy:
+        from:        
+          kind: ImageStreamTag
+          name: jboss-eap6-openshift:${EAP_RELEASE}
+          namespace: openshift
+      type: Source  
+------------------------------------------
+
+ por:
+------------------------------------------
+strategy:        
+      sourceStrategy:
+        from:        
+          kind: ImageStreamTag
+          name: ${EAP_IMAGE_STREAM}:${EAP_RELEASE}
+          namespace: openshift
+      type: Source  
+------------------------------------------
+
+y en el bloque de "parameters" cambio el bloque:
+
+------------------------------------------
+- description: EAP Release version, e.g. 6.4, etc.
+  name: EAP_RELEASE  
+  value: "6.4" 
+------------------------------------------
+
+por:
+------------------------------------------
+- description: ImageStream name.
+  name: EAP_IMAGE_STREAM
+  value: "jboss-eap64-openshift"
+  required: true
+------------------------------------------
+
+
+
+-----------------------------------------------------------------------------
+Ref.: https://github.com/thesteve0/openshift3mlbparks

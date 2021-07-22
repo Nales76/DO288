@@ -1,0 +1,73 @@
+EJERCICIO TOMCAT - PARTE 1			Last Update: 11-Noviembre-2020
+===========================
+
+Se subirá a la cuenta de Quay del usuario la imagen de contenedor de Tomcat "webserver53-openjdk8-tomcat9-openshift-rhel7".
+
+PASOS A REALIZAR:
+
+1.- Cargar en la caché local del motor de contenedores la imagen de Tomcat. 
+
+  VARIANTE 1: La IC está en el registry de Red Hat "registry.redhat.io" en el repositorio/usuario "jboss-webserver-5"
+ 
+	registry.redhat.io/jboss-webserver-5/webserver53-openjdk8-tomcat9-openshift-rhel7
+
+  VARIANTE 2: La IC está en un fichero tar en /content/IC con el nombre de "tomcat.tar".
+
+2.- En el S.O., crear las variables de entorno "QUAY_USER" y "QUAY_PASSWD" con los valores adecuados y que siempre
+    estén disponibles en el usuario "student".
+
+3.- Subirla a la cuenta de Quay.io con el nombre de "tomcat". No hacerla pública.
+
+
+SOLUCIÓN
+=========
+
+0.- Veo la información de la IC en Red Hat Container Catalog: https://catalog.redhat.com -> Certified software -> Container images
+	https://catalog.redhat.com/software/containers/search
+
+	https://catalog.redhat.com/software/containers/jboss-webserver-5/webserver53-openjdk8-tomcat9-openshift-rhel7/5e668a2cd70cc54b02c64007
+
+1.- Cacheo en local la IC:
+
+    VARIANTE 1:
+
+	sudo podman pull registry.redhat.io/jboss-webserver-5/webserver53-openjdk8-tomcat9-openshift-rhel7
+
+      da un error, es un registry privado, necesito user y password en Red Hat:
+
+	sudo podman login -u <USUARIO_RH> -p <PASSWORD_RH> registry.redhat.io
+	sudo podman pull registry.redhat.io/jboss-webserver-5/webserver53-openjdk8-tomcat9-openshift-rhel7
+
+     VARIANTE 2:
+
+	wget http://content.example.com/IC/tomcat.tar
+	sudo podman load -i tomcat.tar
+
+ verifico que ahora está en la caché local:
+
+	sudo podman images
+
+2.- Creo las variables de entorno en el fichero .bashrc del usuario student:
+
+	echo -en "QUAY_USER=<USUARIO_QUAY>\nQUAY_PASSWD=<PASSWD_QUAY>\nexport QUAY_USER QUAY_PASSWD\n" >> /home/student/.bashrc
+	source /home/student/.bashrc
+
+3.- Tagueo la IC obtenida con el nombre adecuado en Quay.io:
+
+	sudo podman tag registry.redhat.io/jboss-webserver-5/webserver53-openjdk8-tomcat9-openshift-rhel7 quay.io/${QUAY_USER}/tomcat
+
+  verifico:
+	sudo podman images
+
+  hago login en Quay con mi cuenta y subo la imagen:
+
+	sudo podman login -u ${QUAY_USER} -p ${QUAY_PASSWD} quay.io
+	sudo podman push quay.io/${QUAY_USER}/tomcat
+
+  ó usando skopeo me ahorro los pasos anteriores del punto 3:
+
+	skopeo copy skopeo copy docker://registry.redhat.io/jboss-webserver-5/webserver53-openjdk8-tomcat9-openshift-rhel7 docker://quay.io/${QUAY_USER}/tomcat --src-creds <USUARIO_REDHAT>:<PASS_REDHAT> --dest-creds ${QUAY_USER}:${QUAY_PASSWORD} 
+	
+  entro en https://quay.io en mi cuenta y verifico que la imagen aparece
+
+FIN

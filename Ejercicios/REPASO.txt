@@ -1,0 +1,247 @@
+======================
+REPASO
+======================
+
+USUARIO NO HACE LOGIN
+------
+1.- ¿Qué Identity Provider usa? -> HTPASSWD
+2.- Extraigo fichero del secret -> HTPASSWD
+3.- Actualizo entrada de developer en fichero htpasswd
+4.- Actualizo el secret con el fichero modificado
+5.- Compruebo
+... 5.1. -PODs proyecto openshift-aunthentication (redespliega)
+... 5.2.- Probar login de usuario
+
+
+CHULETAS IMPORTANTES (.TXT)
+------------------------
+TAINTS 
+PROBES
+CONTROLADORES => pid 1 del contenedor
+------------------------
+
+
+!!!!!!!!!!!!!  TEMA 1- EL MÁS IMPORTANTE !!!!!!!!!!!!!!
+
+------------------
+TEMA -1- Deploying and Managing Applications
+------------------
+
+#########################
+#  -> PROCEDIMIENTOS Y CONCEPTOS
+#########################
+
+- Tipos de Nodos: Infra, Master, Worker
+- Procedimientos: 
+.....evacuación aplicaciones + actualización cluster
+.....proceso Build
+.....creacion de Image Stream... ¡¡ OJO opciones Image Stream !!
+.....logs: buildConfig, Build y DeploymentConfig (Hooks ciclo de vida), PODS
+
+#########################
+#  -> DESCRIPCIÓN PROCEDIMIENTOS
+#########################
+
+Desplegar una Imagen de Contenedor:
+-> Le doy la direccion del IC en un registry:  
+    oc new-app --docker-image=<DIR>
+
+-> Le doy referencia a un Image Stream
+	oc new-app -i <proyecto><nombre_ISTag>
+
+S2I:
+S2I:
+
+PÁGINA 18  => ¡¡¡¡ importante !!!
+PÁGINA 215 => Algoritmo decision proceso de BUILD 
+
+
+------------------
+TEMA -2- Designing Containerized Applications => (TEMA 11 DO286)
+------------------
+
+#########################
+#  -> PROCEDIMIENTOS Y CONCEPTOS=
+#########################
+-> Imagenes Parent + Imagenes Child... Dockerfile, ON BUILD
+-> Procedimiento Permisos Usuarios DockerFile... ¿Cómo dispara OpenShift contenedores? ¿Con qué usuarios?
+-> Procedimiento SCC... como ClusterAdmin
+-> Manejo Secrets
+     oc set data
+
+-> Triggers y Rollout
+
+#########################
+#  -> DESCRIPCIÓN PROCEDIMIENTOS
+#########################
+
+podman login 
+podman pull REGISTRY1/usuario/Imagen 
+podman-tag REGISTRY1/usuario/Imagen REGISTRY2/usuario/Imagen 
+podman push REGISTRY1/usuario/Imagen REGISTRY2/usuario/Imagen 
+skopeo => te ahorras el paso por cache local
+
+------------------
+TEMA -3- Publishing Enterprise Container
+------------------
+
+#########################
+#  -> PROCEDIMIENTOS Y CONCEPTOS
+#########################
+-> Tipos de Registries
+-> Procedimientos: Pull con credenciales
+-> Procedimientos: Autenticacion: token
+->Procedimientos: Skopeo
+-> Procedimiento: Modificar Operador que gestiona el Registry interno para exponer ruta
+
+#########################
+#  -> DESCRIPCIÓN PROCEDIIMENTOS
+#########################
+
+
+------------------
+TEMA -4- Building Applications
+------------------
+
+#########################
+#  -> PROCEDIMIENTOS Y CONCEPTOS
+#########################
+-> Nivel del log
+-> Triggers
+-> Hooks... Deployment, Ciclo de vida
+
+#########################
+#  -> DESCRIPCIÓN PROCEDIIMENTOS
+#########################
+
+
+------------------
+TEMA -5- Customizing Source-to-Image Builds
+------------------
+
+#########################
+#  -> PROCEDIMIENTOS Y CONCEPTOS
+#########################
+
+
+#########################
+#  -> DESCRIPCIÓN PROCEDIIMENTOS
+#########################
+
+
+------------------
+TEMA -6- Creating Applications from OpenShift Templates
+------------------
+
+#########################
+#  -> PROCEDIMIENTOS Y CONCEPTOS
+#########################
+
+
+-----
+Def: Conjunto de recursos OpenShift parametrizados
+
+apiVersion: template.openshift.io/v1
+kind: Template 
+metadata:
+ name: mytemplate
+ annotations:
+ description: "Description" 
+objects:    -----------------------------------> LISTADO DE RECURSOS
+
+
+parameters: -----------------------------------> LISTADO DE PARAMETROS
+- description: Myapp configuration data
+  name: MYPARAMETER
+  required: true
+
+labels:     -----------------------------------> SELECTOR DE RECURSOS, LISTA ETIQUETAS A TODOS LOS RECURSOS
+ mylabel: myapp  
+
+-----
+Operator Samples... gestiona plantillas que vienen por defecto con OpenShift
+
+
+#########################
+#  -> COMANDOS
+#########################
+
+____ 1.- Parametros Plantilla
+
+[student@workstation fruits-catalog]$ oc process --parameters mongodb-persistent -n openshift 
+.....
+MEMORY_LIMIT
+NAMESPACE
+DATABASE_SERVICE_NAME=mongodb
+MONGODB_USER=frutero
+MONGODB_PASSWORD=vitaminas
+MONGODB_DATABASE=fruits
+MONGODB_ADMIN_PASSWORD
+VOLUME_CAPACITY
+MONGODB_VERSION
+......
+-p DATABASE_SERVICE_NAME=mongodb -p MONGODB_USER=frutero -p MONGODB_PASSWORD=vitaminas -p MONGODB_DATABASE=fruits
+.....
+
+____ 2.- Procesar Plantilla
+[student@workstation fruits-catalog]$ OPCIONES='-p DATABASE_SERVICE_NAME=mongodb -p MONGODB_USER=frutero -p MONGODB_PASSWORD=vitaminas -p MONGODB_DATABASE=fruits'
+[student@workstation fruits-catalog]$ oc new-app --template mongodb-persistent $OPCIONES -n openshift -o yaml > mimongo_template.yaml
+
+____ 3.- Deplegar aplicacion
+[student@workstation fruits-catalog]$ oc create -f mimongo_template.yaml
+[student@workstation fruits-catalog]$ oc delete -f mimongo_template.yaml
+
+
+#########################
+#  -> DESCRIPCIÓN PROCEDIIMENTOS
+#########################
+
+------------------
+TEMA -4- 
+------------------
+
+
+oc set triggerts
+
+
+____ 1.1.- Crear Proyecto
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-clinica1 --description="Desplegar clinica 1" --display-name="Clinica 1"
+[student@workstation ~]$ oc describe ${RHT_OCP4_DEV_USER}-clinica1 
+
+____ 1.2.- Localizar variables de entorno que necesita la imagen
+
+____ 1.3.- Crear secret
+[student@workstation ~]$ oc create secret generic petclinic --from-literal user=petclinic --from-literal password=petclinic  --from-literal database=petclinic  --from-literal root_password=petclinic  
+[student@workstation ~]$ oc describe secret petclinic
+[student@workstation ~]$ oc set data secret petclinic --from-literal user=petclinic
+
+____ 1.4.- Levantar base datos
+[student@workstation ~]$ oc get is -n openshift
+[student@workstation ~]$ oc new-app --name=petclinic-db -i mysql  
+
+____ 1.5.- Inyectar variables de entorno
+[student@workstation clinica-mascotas]$ oc set volumes deployment/petclinic-db  --add --name petclinic-data --type pvc  --claim-mode rwo --claim-size 2Gi --mount-path /var/lib/mysql/data  --claim-name petclinic
+[student@workstation ~]$ oc set env deployment/petclinic-db --prefix MYSQL_ --from secret/petclinic
+
+
+----
+
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-clinica2 --description="Desplegar clinica 2" --display-name="Clinica 2"
+[student@workstation clinica-mascotas]$ OPCIONES='-p MYSQL_USER=petclinic -p MYSQL_PASSWORD=petclinic -p MYSQL_DATABASE=petclinic -p VOLUME_CAPACITY=2Gi -p MYSQL_ROOT_PASSWORD=petclinic'
+[student@workstation clinica-mascotas]$ oc new-app --template mysql-persistent $OPCIONES -o yaml > mysql_template.yaml
+[student@workstation clinica-mascotas]$ oc create -f ./mysql_template.yaml
+[student@workstation clinica-mascotas]$ oc delete -f ./mysql_template.yaml
+[student@workstation clinica-mascotas]$ oc rollout latest dc/mysql
+[student@workstation clinica-mascotas]$ oc rollout cancel dc/mysql
+
+[student@workstation clinica-mascotas]$ oc scale 
+
+
+-------
+[student@workstation ~]$ oc project ${RHT_OCP4_DEV_USER}-clinica1 
+
+
+
+
+

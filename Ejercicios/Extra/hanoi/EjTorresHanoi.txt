@@ -1,0 +1,39 @@
+EJERCICIO TORRES DE HANOI			Last Update: 4-Octubre-20
+==========================
+
+Se va a desplegar una aplicación en JavaScript que permite jugar a las Torres de Hanoi. 
+
+
+1.- Se hará un fork del código fuente de:
+
+	https://github.com/AYIDouble/Tower-of-Hanoi-JavaScript
+
+   en el usuario Git del alumno.
+
+2.- Usando el usuario de OCP "developer", se desplegará en el clúster OpenShift la app del Git del usuario en el proyecto "torres-hanoi" donde todos los recursos tendrán el nombre "hanoi" y a etiqueta "juego" con valor "torres-hanoi"
+
+3.- Se creará la ruta llamada "torres" en la URL "torres-hanoi.<dominio-ocp>".
+
+4.- Eliminar el proyecto "torres-hanoi"·
+
+NOTA: El juego, en su forma más tradicional, consiste en tres postes verticales. En uno de los postes se apila un número indeterminado de discos perforados por su centro (elaborados de madera), que determinará la complejidad de la solución. Por regla general se consideran siete discos. Los discos se apilan sobre uno de los postes en tamaño decreciente de abajo a arriba. No hay dos discos iguales, y todos ellos están apilados de mayor a menor radio -desde la base del poste hacia arriba- en uno de los postes, quedando los otros dos postes vacíos. El juego consiste en pasar todos los discos desde el poste ocupado (es decir, el que posee la torre) a uno de los otros postes vacíos. Para realizar este objetivo, es necesario seguir tres simples reglas:
+
+ - Solo se puede mover un disco cada vez y para mover otro los demás tienen que estar en postes.
+ - Un disco de mayor tamaño no puede estar sobre uno más pequeño que él mismo.
+ - Solo se puede desplazar el disco que se encuentre arriba en cada poste.
+
+Existen diversas formas de llegar a la solución final, todas ellas siguiendo estrategias diversas.
+
+Con 3 discos, el puzzle puede ser resuelto en 7 movimientos. El número mínimo de movimientos es de 2^n − 1, donde n es el número de discos.
+
+----------
+PASO 2 - CREAR PROYECTO
+----------
+[student@workstation ~]$ oc login -u andepiel45-hotmail-com -p 8b1209eac3bb4a0b920e  https://api.eu45.prod.nextcle.com:6443 
+[student@workstation ~]$ oc new-project torres-hanoi --description="Aplicacion Torres Hanoi" --display-name="Torres Hanoi"
+[student@workstation ~]$ oc new-app --name=hanoi -l juego=torres-hanoi --as-deployment-config httpd~https://github.com/CesarTest/Tower-of-Hanoi-JavaScript.git
+
+----------
+PASO 3 - EXPONER LA RUTA
+----------
+[student@workstation ~]$ oc expose service/hanoi --name=hanoi --hostname torres-hanoi-andepiel45-hotmail-com.apps.eu45.prod.nextcle.com 

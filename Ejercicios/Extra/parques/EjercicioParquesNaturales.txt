@@ -1,0 +1,95 @@
+APP PARQUES NACIONALES		Last Update: Nov-2020
+======================
+
+En el proyecto "<usuario>-parks", se va a crear una app a partir de la plantilla que se puede obtener de:
+
+https://raw.githubusercontent.com/lordofthejars/nationalparks-py/master/ose3/application-template.json
+
+Crear la plantilla en el proyecto y modificarla para que haya dos parámentros obligatorios: el nombre de la app y la ruta.
+Esto quiere decir que si se usa la plantilla sin dar ambos parámetros, el comando oc new-app debe fallar.
+
+Todos los recursos creados con la plantilla sólo tendrán un label: "application=nationalparks".
+
+Además, en el deploymentConfig de Mongo, se debe usar un ISTag "mongodb:3.2", con lo que habrá que añadir a la plantilla,
+el IS "mongo" con el ISTag "mongodb:3.2" que referencia a:
+
+registry.redhat.io/rhscl/mongodb-32-rhel7
+
+Desplegar la app procesando la plantilla donde el nombre de la app es "parks" y la ruta estará en la URL: <usuario>-parks.<dominio-ocp>.
+
+Una vez esté la app funcionando, en la ruta se ve el mensaje "Welcome to the National Parks data service." y en el path /ws/data/all se ven los datos de la BBDD.
+
+------------------------------------------------------------------------------
+Ref.: https://github.com/lordofthejars/nationalparks-py
+
+
+
+----------
+PASO 1 - CREAR EJEMPLOS
+----------
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-parks --description="National Parks data service" --display-name="National Parks"
+[student@workstation ~]$ oc describe project ${RHT_OCP4_DEV_USER}-parks 
+
+----------
+PASO 2 - CREAR PLANTILLA
+----------
+____ 2.1.- Descarga y Editar Plantilla
+[student@workstation ~]$ wget https://raw.githubusercontent.com/lordofthejars/nationalparks-py/master/ose3/application-template.json
+[student@workstation ~]$ vim ./application-template.json
+.....
+parameters:
+- description: Application Name
+  name: APPLICATION_NAME
+  value: nationalparks
+  required: true
+  
+- description: Application Name
+  name: APPLICATION_HOSTNAME
+  value: 
+  required: true
+
+labels:
+  application: nationalparks
+  
+objects:
+   
+   registry.redhat.io/rhscl/mongodb-32-rhel7
+   
+.....
+
+=====> Abrir otro terminal
+[student@workstation ~] oc import-image mongodb:3.2 --confirm  --from registry.redhat.io/rhscl/mongodb-32-rhel7
+[student@workstation ~] oc import-image mongodb:3.2 --from registry.redhat.io/rhscl/mongodb-32-rhel7 -o json > is.json
+
+=====> Copiar definición de recursos dentro del template
+
+
+
+
+____ 2.2.- Crear Plantilla
+[student@workstation ~]$ oc create -f ./application-template.json
+
+
+----------
+PASO 3 - DESPLEGAR APLICACION
+----------
+
+[student@workstation ~]$ oc process --parameters application-template.json
+.......
+APPLICATION_NAME=parks
+APPLICATION_HOSTNAME=${RHT_OCP4_DEV_USER}-parks.${RHT_OCP4_WILDCARD_DOMAIN}
+.....
+[student@workstation ~]$ OPCIONES='-p  APPLICATION_NAME=parks  -p APPLICATION_HOSTNAME=${RHT_OCP4_DEV_USER}-parks.${RHT_OCP4_WILDCARD_DOMAIN}'
+
+[student@workstation ~]$ oc new-app --template nationalparks-py $OPCIONES -o yaml > misparques_template.yaml
+[student@workstation ~]$ oc create -f misparques_template.yaml
+[student@workstation ~]$ oc delete -f misparques_template.yaml
+
+[student@workstation ~]$ oc status
+[student@workstation ~]$ oc get events
+[student@workstation ~]$ oc rollout latest dc/mongodb
+
+
+
+

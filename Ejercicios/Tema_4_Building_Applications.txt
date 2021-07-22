@@ -1,0 +1,264 @@
+=========================
+TEMA 4 - BUILDING APPLICATIONS
+=========================
+
+
+BC -> build: construir app + hook post commit -> push Registry interno
+... hasta dos Build en el etcd
+
+Hooks Post Commit (
+=> Command 
+=> 
+
+
+IMAGEN CONSTRUCCION	
+   a) Script Run + Assemble
+   b) Scripts Opcionales: save-artifacts
+
+----------
+BUILD solo se crea cada vez que se crea un BuildConfig... pero no las actualizaciones
+----------
+
+/run/user/1000/auth.json
+
+----------
+GUIDED 1 - Managing Application Builds
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab manage-builds start
+
+1.- Clone Source Code 
+--------
+[student@workstation ~]$ cd DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+[student@workstation DO288-apps]$ git checkout -b manage-builds
+[student@workstation DO288-apps]$ git push -u origin manage-builds
+[student@workstation DO288-apps]$ cat /home/student/DO288-apps/java-serverhost/src/main/java/com/redhat/training/example/javaserverhost/rest/ServerHostEndPoint.java
+
+2.- Create Project
+--------
+[student@workstation DO288-apps]$ source /usr/local/etc/ocp4.config
+[student@workstation DO288-apps]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation DO288-apps]$ oc new-project  ${RHT_OCP4_DEV_USER}-manage-builds
+
+3.- Deploy Application
+--------
+[student@workstation DO288-apps]$ oc new-app --as-deployment-config --name jhost  --build-env MAVEN_MIRROR_URL=http://${RHT_OCP4_NEXUS_SERVER}/repository/java  -i redhat-openjdk18-openshift:1.5  https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps#manage-builds  --context-dir java-serverhost
+[student@workstation DO288-apps]$ oc logs -f bc/jhost
+[student@workstation DO288-apps]$ oc get pods
+[student@workstation DO288-apps]$ oc expose svc/jhost
+[student@workstation DO288-apps]$ oc get route
+[student@workstation DO288-apps]$ curl  http://jhost-${RHT_OCP4_DEV_USER}-manage-builds.${RHT_OCP4_WILDCARD_DOMAIN}
+
+4.-  Check bc and builds
+--------
+[student@workstation DO288-apps]$ oc get bc
+[student@workstation DO288-apps]$ oc get builds
+
+5.- Update the code
+--------
+[student@workstation DO288-apps]$ vim /home/student/DO288-apps/java-serverhost/src/main/java/com/redhat/training/example/javaserverhost/rest/ServerHostEndPoint.java
+.....
+String msg = "I am running on server "+host+" Version 2.0 \n"; ----> CHANGE THIS
+....
+[student@workstation DO288-apps]$ cd java-serverhost
+[student@workstation java-serverhost]$ git commit -a -m 'Update the version'
+[student@workstation java-serverhost]$ oc start-build bc/jhost
+[student@workstation java-serverhost]$ oc cancel-build bc/jhost
+[student@workstation java-serverhost]$ oc get builds
+[student@workstation java-serverhost]$ git push
+[student@workstation java-serverhost]$ cd ~
+[student@workstation ~]$ oc start-build bc/jhost
+[student@workstation ~]$ oc get builds
+[student@workstation ~]$ oc logs -f build/jhost-3
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ curl  http://jhost-${RHT_OCP4_DEV_USER}-manage-builds.${RHT_OCP4_WILDCARD_DOMAIN}
+
+6.-  Delete Project
+--------
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-manage-builds
+
+7.- Finish
+--------
+[student@workstation ~]$ lab manage-builds finish
+
+----------
+GUIDED 2 - Triggering Builds
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab trigger-builds start
+
+1.- Create Project
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-trigger-builds
+
+2.- Create Quaio Private Repository + OpenShift access credentials 
+--------
+[student@workstation ~]$ podman login -u ${RHT_OCP4_QUAY_USER} quay.io
+[student@workstation ~]$ cd /home/student/DO288/labs/trigger-builds
+
+[student@workstation trigger-builds]$ skopeo copy  docker-archive:php-70-rhel7-original.tar.gz  docker://quay.io/${RHT_OCP4_QUAY_USER}/php-70-rhel7:latest
+
+[student@workstation trigger-builds]$ oc create secret generic quay-registry  --from-file .dockerconfigjson=${XDG_RUNTIME_DIR}/containers/auth.json  --type kubernetes.io/dockerconfigjson
+
+[student@workstation trigger-builds]$ oc secrets link builder quay-registry
+
+### OJO AL CONFIRM... si no se lo pasa, no importa
+[student@workstation trigger-builds]$ oc import-image php  --from quay.io/${RHT_OCP4_QUAY_USER}/php-70-rhel7 --confirm
+
+3.- Deploy applicaition + Verify Image Trigger
+--------
+[student@workstation trigger-builds]$ oc new-app --as-deployment-config  --name trigger  php~http://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps  --context-dir trigger-builds
+[student@workstation trigger-builds]$ oc logs -f bc/trigger
+[student@workstation trigger-builds]$ oc get pods
+[student@workstation trigger-builds]$ oc describe bc/trigger | grep Triggered
+
+4.- Manually update the image and Update the Image Stream
+--------
+[student@workstation trigger-builds]$ skopeo copy  docker-archive:php-70-rhel7-newer.tar.gz  docker://quay.io/${RHT_OCP4_QUAY_USER}/php-70-rhel7:latest
+[student@workstation trigger-builds]$ oc import-image php 
+
+5.- Verify Build is Triggereds
+--------
+[student@workstation trigger-builds]$ oc get builds
+[student@workstation trigger-builds]$ oc describe build trigger-2 | grep cause
+
+6.- Delete image 
+--------
+[student@workstation trigger-builds]$ cd ~
+[student@workstation ~]$ 
+[student@workstation ~]$ skopeo delete  docker://quay.io/${RHT_OCP4_QUAY_USER}/php-70-rhel7
+Firefox -> https://quay.io/user/andepiel45
+..... Delete Repository
+
+7.- Finish
+-------
+[student@workstation ~]$ lab trigger-builds finish
+
+----------
+GUIDED 3 - Implementing Post-Commit Build Hooks
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab post-commit start
+
+1.- Create Project
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation DO288-apps]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc project ${RHT_OCP4_DEV_USER}-post-commit
+[student@workstation ~]$ oc status
+
+2.- Deploy uService
+--------
+[student@workstation ~]$ oc new-app --as-deployment-config --name hook  php:7.3~http://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps  --context-dir post-commit
+[student@workstation ~]$ oc logs -f bc/hook
+[student@workstation ~]$ oc get pods
+
+3.- Create Hook + Restart Build to activate trigger
+--------
+[student@workstation ~]$ cat ~/DO288/labs/post-commit/create-hook.sh
+...............
+...output omitted...
+oc set build-hook bc/hook --post-commit --command -- \
+ bash -c "curl -s -S -i -X POST http://builds-for-managers-${RHT_OCP4_DEV_USER}-post-commit.${RHT_OCP4_WILDCARD_DOMAIN}/api/builds
+ -f -d 'developer=\${DEVELOPER}&git=\${OPENSHIFT_BUILD_SOURCE}&project=\
+${OPENSHIFT_BUILD_NAMESPACE}'"
+...............
+[student@workstation ~]$ ~/DO288/labs/post-commit/create-hook.sh
+[student@workstation ~]$ oc describe bc/hook | grep Post
+[student@workstation ~]$ oc start-build bc/hook -F
+[student@workstation ~]$ 
+
+4.- Verify trigger
+--------
+[student@workstation ~]$ oc set env bc/hook DEVELOPER="Cesar"
+[student@workstation ~]$ oc set env bc/hook --list
+[student@workstation ~]$ oc start-build bc/hook -F
+[student@workstation ~]$ oc get route/builds-for-managers  -o jsonpath='{.spec.host}{"\n"}'
+Firefox -> 
+
+5.- Delete Project
+--------
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-post-commit
+
+6.- Finish
+--------
+[student@workstation ~]$ lab post-commit finish
+
+
+----------
+LAB - Building Applications
+----------
+
+##################
+# REQUIREMENTS
+#  Project Name: ${RHT_OCP4_DEV_USER}-build-app
+#  App Name: simple
+#  Deploy App: oc-new-app.sh
+#  GIT URL: https://github.com/CesarTest/DO288-apps.
+#  Context Dir: build-app
+#  Nexus Dir: http://${RHT_OCP4_NEXUS_SERVER}/repository/nodejs
+#  Environment Variable (S2I image builder): npm_config_registry 
+#  Route: simple-${RHT_OCP4_DEV_USER}-build-app.apps.cluster.domain.example.com.
+##################
+
+
+0.- Start
+--------
+[student@workstation ~]$ lab build-app start
+
+1.- Create Project
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-build-app
+[student@workstation ~]$ oc status
+
+2.- Deploy Application
+--------
+[student@workstation ~]$ /home/student/DO288/labs/build-app/oc-new-app.sh
+
+3.- Fix build error
+-------
+[student@workstation ~]$ oc logs -f bc/simple
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ oc set env bc simple npm_config_registry=http://${RHT_OCP4_NEXUS_SERVER}/repository/nodejs
+[student@workstation ~]$ oc set env bc/simple --list
+
+# Si falla, reintentar a mano
+[student@workstation ~]$ oc start-build bc/simple --list
+
+4.- Expose the service
+-------
+[student@workstation ~]$ oc expose svc simple
+[student@workstation ~]$ oc get route/simple -o jsonpath='{.spec.host}{"\n"}'
+
+5.- Start new Build
+-------
+[student@workstation ~]$ oc start-build bc/simple --list
+
+6.- Setup webhook
+-------
+[student@workstation ~]$ oc describe bc simple
+[student@workstation ~]$ oc get bc simple  -o jsonpath="{.spec.triggers[*].generic.secret}{'\n'}"
+[student@workstation ~]$ curl -X POST -k  ${RHT_OCP4_MASTER_API}/apis/build.openshift.io/v1/namespaces/${RHT_OCP4_DEV_USER}-build-app /buildconfigs/simple/webhooks/4R8kYYf3014kCSPcECmn/generic
+
+7.- Grade
+-------
+[student@workstation ~]$ lab build-app grade
+
+8.- Delete Project
+-------
+student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-build-app
+
+9.- Finish
+--------
+[student@workstation ~]$ lab build-app finish

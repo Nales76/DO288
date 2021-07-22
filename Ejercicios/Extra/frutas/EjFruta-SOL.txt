@@ -1,0 +1,94 @@
+Ejercicio Catálogo de Fruta	- SOLUCIÓN			Last Update: 6-Nov-2020
+----------------------------
+
+Usando el plugin de Maven Fabric8, se va a desplegar una aplicación que consiste en un catálogo de frutas.
+
+La aplicación tiene 3 componentes:
+	- frontend Angular + backend Spring Boot (App Java)
+	- BBDD MongoDB
+
+El código fuente de la app está en:
+
+	https://github.com/lbroudoux/secured-fruits-catalog-k8s
+	
+La aplicación no estaba pensada para ser ejecutada en contenedores, vamos a realizar cambios:
+	- Las credenciales de la BBDD (user y password) irán en un secret
+	- La ruta estará securizada (Edge).
+	- Se usará Fabric8 para desplegar la app (los cambios necesarios en el fichero pom.xml ya han sido realizados)
+	
+Pasos a seguir:
+
+ 1.- Usando el usuario developer de OCP, crear el proyecto "<usuario>-fruits-catalog" con display-name "Fruits Catalog".
+
+ 2.- Desplegar una BBDD MongoDB con almacenamiento persistente usando la template adecuada del proyecto openshift con los datos:
+		- Nombre de la BBDD: fruits
+		- Usuario: frutero
+		- Password: vitaminas
+		- Nombre del servicio: mongodb
+
+ 3.- Desplegar la app usando el pluging Maven Fabric8.
+
+ 4.- Modificar la ruta creada para que sea segura de tipo Edge y que si se accede a dicha ruta por http se haga la redirección a https.
+
+SOLUCIÓN
+---------
+
+1.- Crear el proyecto como usuario developer:
+
+	oc login -u ${RHT_OCP4_DEV_USER} -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+
+	oc new-project <usuario>-fruits-catalog --display-name="Fruits Catalog"
+
+2.- Despliego la BBDD:
+
+	oc get template -n openshift | grep -i ^mongo			-> veo que existen mongodb-ephemeral y mongodb-persistent
+
+  veo los parámetros de la plantilla "mongodb-persistent":
+	
+	oc process --parameters mongodb-persistent -n openshift
+
+  y decido los valores de los parámetros: 
+	DATABASE_SERVICE_NAME -> mongodb    MONGODB_DATABASE -> fruits    MONGODB_USER -> frutero    MONGODB_PASSWORD ->  vitaminas
+
+    proceso la plantilla:
+
+	oc new-app --template mongodb-persistent --name=mongodb -p DATABASE_SERVICE_NAME=mongodb -p MONGODB_DATABASE=fruits -p MONGODB_USER=frutero -p MONGODB_PASSWORD=vitaminas -l app=fruits-catalog 
+
+  verifico:
+	oc get pvc
+	oc set env dc/mongodb --list
+	oc get pod
+	oc logs -f dc/mongodb
+
+3.- Despliego la app usando el plugin Maven Fabric8:
+
+	cd ~/Apps
+	git clone https://github.com/lbroudoux/secured-fruits-catalog-k8s
+	cd secured-fruits-catalog-k8s
+	mvn fabric8:deploy -Popenshift
+
+	oc get pod		-> BBDD y app Running
+
+	oc logs -f dc/mongodb	-> errores de conexión del usuario "frutero" a la BBDD "sampledb"
+
+	oc set env dc/fruits-catalog --list	-> Upssss, si miro en SPRING_DATA_MONGODB_URI (la URL de conexión a la BBDD), el nombre de mi BBDD no es "sampledb"
+
+ modifico la variable de entorno "SPRING_DATA_MONGODB_URI"
+
+	oc set env dc/fruits-catalog SPRING_DATA_MONGODB_URI='mongodb://${SPRING_DATA_MONGODB_USER}:${SPRING_DATA_MONGODB_PASSWORD}@mongodb/fruits' --overwrite		
+
+                       -> OJO con las comillas para que la bash de la máquina local no haga sustituciones no deseadas
+
+   se produce un nuevo despliegue y parece que ahora en los logs de la BBDD no hay errores de conexión
+
+4.- Modfico la ruta creada en el paso anterior:
+
+	oc patch route/fruits-catalog --type=json -p '[{"op":"add", "path":"/spec/tls", "value":{"termination":"edge"}}]'
+	oc patch route/fruits-catalog --patch '{"spec": {"tls": {"insecureEdgeTerminationPolicy": "Redirect"}}}'
+
+ y desde un navegador accedo a la ruta por http o https: fruits-catalog-<usuario>-ruits-catalog.<dominio-OCP> y veo que puedo almacenar frutas en el catálogo (usar nombres de frutas en inglés)
+
+Refs.:
+	https://www.redhat.com/en/resources/container-security-openshift-cloud-devops-whitepaper
+	https://itnext.io/adding-security-layers-to-your-app-on-openshift-part-1-deployment-and-tls-ingress-9ef752835599
+	https://maven.fabric8.io/#fabric8:deploy

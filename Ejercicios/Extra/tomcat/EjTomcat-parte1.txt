@@ -1,0 +1,62 @@
+EJERCICIO TOMCAT - PARTE 1			Last Update: 3-Agosto-2020
+===========================
+
+Se subirá a la cuenta de Quay del usuario la imagen de contenedor de Tomcat "webserver53-openjdk8-tomcat9-openshift-rhel7".
+
+PASOS A REALIZAR:
+
+1.- Cargar en la caché local del motor de contenedores la imagen de Tomcat. 
+
+  VARIANTE 1: La IC está en el registry de Red Hat "registry.redhat.io" en el repositorio/usuario "jboss-webserver-5"
+ 
+	registry.redhat.io/jboss-webserver-5/webserver53-openjdk8-tomcat9-openshift-rhel7
+
+  VARIANTE 2: La IC está en un fichero tar en /content/IC con el nombre de "tomcat.tar".
+
+2.- En el S.O., crear las variables de entorno "QUAY_USER" y "QUAY_PASSWD" con los valores adecuados y que siempre
+    estén disponibles en el usuario "student".
+
+3.- Subirla a la cuenta de Quay.io con el nombre de "tomcat". No hacerla pública.
+
+
+----------
+PASO 1 - CARGAR EN CACHE LOCAL IMAGEN TOMCAT 
+----------
+
+1.1.- Login al Registry RedHat
+-------------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config  
+[student@workstation ~]$ podman login registry.redhat.io
+Username: andepiel45@hotmail.com
+Password: eYM2hn9QD9PYaVU
+Login Succeeded!
+
+1.2.- Guardar Imagen en cache local
+-------------
+[student@workstation ~]$ sudo podman pull registry.redhat.io/jboss-webserver-5/webserver53-openjdk8-tomcat9-openshift-rhel7
+
+1.3.- Subir Imagen en Quayo
+-------------
+[student@workstation ~]$ skopeo copy  docker://registry.redhat.io/jboss-webserver-5/webserver53-openjdk8-tomcat9-openshift-rhel7  docker://quay.io/${RHT_OCP4_QUAY_USER}/tomcat:9.0
+
+
+----------
+PASO 2 - CARGAR CREDENCIALES QUAIO 
+----------
+
+2.2.- Crear variables de entorno
+-------------
+[student@workstation ~]$ vim ~/.bashrc
+...
+QUAY_USER=andepiel45
+QUAY_PASSWD=ciscousa45
+....
+
+[student@workstation ~]$ read -sp "1.- Introduzca Password Quayo:" 
+.... Password: ciscousa45
+
+----------
+PASO 3 - SUBIR IMAGEN A QUAO
+----------
+[student@workstation ~]$ skopeo copy  docker://registry.redhat.io/jboss-webserver-5/webserver53-openjdk8-tomcat9-openshift-rhel7  docker://quay.io/${RHT_OCP4_QUAY_USER}/tomcat:9.0
+

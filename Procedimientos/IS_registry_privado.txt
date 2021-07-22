@@ -1,0 +1,42 @@
+USAR IS QUE REFERENCIA A IC PRIVADAS			Last Update: 8-Junio-2021
+====================================
+
+
+1) Crear el secret de acceso al registry privado:
+
+ OPCIÓN 1:
+
+	podman login -u <usuario-registry> -p <password-registry> <registry>
+
+	oc create secret generic <nombre-secret> --from-file=.dockerconfigjson=${XDG_RUNTIME_DRY}/containers/auth.json --type kubernetes.io/dockerconfigjson
+
+ OPCION 2:
+
+	oc create secret docker-registry <nombre-secret> --docker-server <registry> --docker-username <usuario-registry> --docker-password <password-registry>  
+
+2) Crear el IS:
+
+	oc import-image <nombre-is>:<tag> --confirm --from=<registry>/<usuario-registry>/<imagen>:<tag>
+
+3) Usarlo en el mismo proyecto
+
+USAR IS QUE REFERENCIA A IC PRIVADA DE OTROS PROYECTOS
+=========================================================
+
+En el proyecto donde estará el IS a usar:
+
+1) Crear el secret de acceso al registry privado según el apartado anterior (opción 1 o 2).
+
+2) Crear el IS usando la reference-policy a local para que cachee las capas de la IC en el registry privado de OCP y 
+   así cuando se use desde distintos proyectos no hay necesidad de conectar con el registry remoto y por tanto, los 
+   proyectos no necesitan token de acceso al registry remoto:
+
+	oc import-image <nombre-is>:<tag> --confirm --reference-policy=local --from=<registry>/<usuario-registry>/<imagen>:<tag>
+
+3) Doy permisos para que los otros proyectos tengan acceso al IS creado (permito a las SA de otros proyectos usar el IS):
+
+	oc policy add-role-to-group system:imagepuller system:serviceaccounts:<nombre-proyecto>
+
+ donde <nombre-proyecto> NO es el proyecto del IS, es otro proyecto donde voy a usar el IS
+
+4) Uso el IS en el proyecto <nombre-proyecto>

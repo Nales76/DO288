@@ -1,0 +1,113 @@
+APP ESTADIOS MLB			Last Update: Nov-2020
+================
+
+La MLB es una organización profesional de béisbol (Grandes Ligas de Béisbol) y las más antigua de las ligas mayores profesionales deportivas en los Estados Unidos y Canadá. Conformada por 30 equipos que juegan en la Liga Nacional y en la Liga Americana, con 15 equipos en cada liga. 
+
+Mas info en:   https://es.wikipedia.org/wiki/Anexo:Estadios_de_B%C3%A9isbol_de_las_Grandes_Ligas
+
+Desplegar en el proyecto "<usuario>-estadios" la app que muestra los estadios a partir de la plantilla que está en:
+
+ https://raw.githubusercontent.com/thesteve0/openshift3mlbparks/master/mlbparks-template.json
+
+Crear en el proyecto <user>-misplantillas esta plantilla.
+
+
+
+----------
+PASO 1 - CREAR PLANTILLA EN PROYECTO <user>-misplantillas
+----------
+
+____ 1.1.- Crear Proyecto
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-misplantillas
+
+____ 1.2.- Crear plantilla
+[student@workstation ~]$ wget https://raw.githubusercontent.com/thesteve0/openshift3mlbparks/master/mlbparks-template.json
+[student@workstation ~]$ oc create -f mlbparks-template.json
+
+----------
+PASO 2 - DESPLEGAR APLICACION EN PROYECTO <user>-misplantillas
+----------
+
+____ 2.1.- Crear Proyecto
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-estadios
+
+____ 2.2.- Procesar plantilla
+[student@workstation ~]$ oc process --parameters mlbparks -n ${RHT_OCP4_DEV_USER}-misplantillas
+.....
+EAP_RELEASE=6.4
+APPLICATION_NAME=estadios
+APPLICATION_HOSTNAME
+GIT_URI
+GIT_REF
+MONGODB_DATABASE
+MONGODB_NOPREALLOC
+MONGODB_SMALLFILES
+MONGODB_QUIET
+MONGODB_USER
+MONGODB_PASSWORD
+MONGODB_ADMIN_PASSWORD
+GITHUB_TRIGGER_SECRET
+GENERIC_TRIGGER_SECRET
+
+
+.....
+[student@workstation ~]$ oc process mlbparks -n ${RHT_OCP4_DEV_USER}-misplantillas -o yaml > ./estadios.yaml
+[student@workstation ~]$ oc new-app --template  ${RHT_OCP4_DEV_USER}-misplantillas/mlbparks -o yaml > ./estadios.yaml
+[student@workstation ~]$ oc new-app ${RHT_OCP4_DEV_USER}-misplantillas//mlbparks -o yaml > ./estadios.yaml
+
+____ 2.3.- Desplegar
+[student@workstation ~]$ oc create -f ./estadios.yaml
+[student@workstation ~]$ oc delete -f ./estadios.yaml
+
+____ 2.4.- Falla URL construccion... retocar plantilla
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ oc get endpoints
+[student@workstation ~]$ oc get dc
+[student@workstation ~]$ oc get bc
+[student@workstation ~]$ oc get svc
+[student@workstation ~]$ oc status --suggest
+[student@workstation ~]$ oc get events
+[student@workstation ~]$ oc logs -f bc/http-mlbparks
+
+[student@workstation ~]$ oc project ${RHT_OCP4_DEV_USER}-misplantillas
+[student@workstation ~]$ vim mlbparks-template.json
+......
+    strategy: {
+	   type: Source,
+	   sourceStratety: {
+	      from: {
+             kind: ImageStreamTag
+             namespace: openshift
+			 name: jboss-eap6-openshift:${EAP_RELEASE}  ====> REEMPLAZAR jboss-eap64-openshift:${EAP_RELEASE}
+			 
+		  }
+	   }
+	}	   
+......
+    parameters: {
+	   name: EAP_RELEASE
+	   value: 6.4 ==========================================> REEMPLAZAR POR latest
+	}
+......
+
+[student@workstation ~]$ oc delete template mlbparks
+[student@workstation ~]$ oc create -f mlbparks-template.json
+
+____ 2.5.- Reconstruir
+[student@workstation ~]$ oc project ${RHT_OCP4_DEV_USER}-estadios
+[student@workstation ~]$ oc new-app --template  ${RHT_OCP4_DEV_USER}-misplantillas/mlbparks -o yaml > ./estadios.yaml
+[student@workstation ~]$ oc create -f ./estadios.yaml
+[student@workstation ~]$ oc delete -f ./estadios.yaml
+
+____ 2.6.- Verificar
+[student@workstation ~]$ oc get route
+Firefox -> http://mlbparks-http-route-dgmhgy.estadios.apps.eu45.prod.nextcle.com
+
+----------
+PASO 3 - ELIMINAR PROYECTOS
+----------
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-misplantillas
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-manage-deploy 
+

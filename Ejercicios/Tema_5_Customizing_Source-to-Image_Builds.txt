@@ -1,0 +1,351 @@
+=========================
+TEMA 5 - CUSTOMIZING SOURCE TO IMAGE BUILD
+=========================
+
+----------
+GUIDED 1 - Customizing S2I Builds
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab s2i-scripts start
+
+
+1.- Start Container + Verify S2I scripts
+--------
+[student@workstation ~]$ sudo podman run --name test -it rhscl/httpd-24-rhel7 bash
+....
+bash-4.2$ cat /usr/libexec/s2i/assemble
+...output omitted...
+bash-4.2$ cat /usr/libexec/s2i/run
+...output omitted...
+bash-4.2$ cat /usr/libexec/s2i/usage
+....
+bash-4.2$ exit
+
+2.- Verify S2I Scripts in GIT repo
+--------
+[student@workstation ~]$ cd DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+[student@workstation DO288-apps]$ cat /home/student/DO288-apps/s2i-scripts/index.html
+[student@workstation DO288-apps]$ ls  /home/student/DO288-apps/s2i-scripts/.s2i/bin
+[student@workstation DO288-apps]$ cat  /home/student/DO288-apps/s2i-scripts/.s2i/bin/assemble
+[student@workstation DO288-apps]$ cat  /home/student/DO288-apps/s2i-scripts/.s2i/bin/run
+
+3.- Create Project + Deploy Application
+--------
+[student@workstation DO288-apps]$ source /usr/local/etc/ocp4.config
+[student@workstation DO288-apps]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation DO288-apps]$ oc new-project ${RHT_OCP4_DEV_USER}-s2i-scripts
+[student@workstation DO288-apps]$ oc new-app --as-deployment-config --name bonjour httpd:2.4~https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps  --context-dir s2i-scripts
+[student@workstation DO288-apps]$ oc logs -f bc/bonjour
+
+4.- Expose SVC + Test it
+--------
+[student@workstation DO288-apps]$ oc get pods
+[student@workstation DO288-apps]$ oc expose svc bonjour
+[student@workstation DO288-apps]$ oc get route
+[student@workstation DO288-apps]$ curl  http://bonjour-${RHT_OCP4_DEV_USER}-s2i-scripts.${RHT_OCP4_WILDCARD_DOMAIN}
+[student@workstation DO288-apps]$ curl  http://bonjour-${RHT_OCP4_DEV_USER}-s2i-scripts.${RHT_OCP4_WILDCARD_DOMAIN}/info.html
+
+[student@workstation DO288-apps]$ oc logs bonjour-1-km4bq
+
+5.- Delete Project 
+--------
+[student@workstation DO288-apps]$ cd ~
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-s2i-scripts
+
+6.- Remove Container
+--------
+[student@workstation ~]$ sudo podman rm test
+
+7.- Finish
+--------
+[student@workstation ~]$ lab s2i-scripts finish
+
+----------
+GUIDED 2 - Creating an S2I Builder Image
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab apache-s2i start
+
+1.- Check s2I version
+--------
+[student@workstation ~]$ s2i version
+
+2.- Create Skeleton of Folders
+--------
+[student@workstation ~]$ s2i create s2i-do288-httpd s2i-do288-httpd
+[student@workstation ~]$ tree -a s2i-do288-httpd
+
+3.- Build Construction Image with PODMAN
+--------
+[student@workstation ~]$ cat ~/DO288/labs/apache-s2i/Dockerfile
+.....
+FROM registry.access.redhat.com/ubi8/ubi:8.0  -----> 1)
+
+# Generic labels
+LABEL Component="httpd" \
+ Name="s2i-do288-httpd" \
+ Version="1.0" \
+ Release="1"
+
+# Labels consumed by OpenShift
+LABEL io.k8s.description="A basic Apache HTTP Server S2I builder image" \  ----> 2)
+ io.k8s.display-name="Apache HTTP Server S2I builder image for DO288" \
+ io.openshift.expose-services="8080:http" \
+ io.openshift.s2i.scripts-url="image:///usr/libexec/s2i" ----------------------> 3)
+
+# This label is used to categorize this image as a builder image in the
+# OpenShift web console.
+LABEL io.openshift.tags="builder, httpd, httpd24"
+
+# Apache HTTP Server DocRoot
+ENV DOCROOT /var/www/html
+
+RUN yum install -y --nodocs --disableplugin=subscription-manager httpd && \  ---> 4)
+ yum clean all --disableplugin=subscription-manager -y && \
+ echo "This is the default index page from the s2i-do288-httpd S2I builder
+ image." > ${DOCROOT}/index.html    --------------------------------------------> 5)
+
+# Change web server port to 8080
+RUN sed -i "s/Listen 80/Listen 8080/g" /etc/httpd/conf/httpd.conf
+
+# Copy the S2I scripts to the default location indicated by the
+# io.openshift.s2i.scripts-url LABEL (default is /usr/libexec/s2i)
+COPY ./s2i/bin/ /usr/libexec/s2i     -------------------------------------------> 6)
+...output omitted...
+
+[student@workstation ~]$ cp ~/DO288/labs/apache-s2i/Dockerfile ~/s2i-do288-httpd/
+[student@workstation ~]$ cp -Rv ~/DO288/labs/apache-s2i/s2i ~/s2i-do288-httpd/
+[student@workstation ~]$ rm -f ~/s2i-do288-httpd/s2i/bin/save-artifacts
+[student@workstation ~]$ cd s2i-do288-httpd
+[student@workstation s2i-do288-httpd]$ sudo podman build -t s2i-do288-httpd .
+[student@workstation s2i-do288-httpd]$ sudo podman images
+
+
+4.- Test Image + Assmble S2I Script
+--------
+[student@workstation s2i-do288-httpd]$ cat ~/DO288/labs/apache-s2i/index.html 
+[student@workstation s2i-do288-httpd]$ cp ~/DO288/labs/apache-s2i/index.html  ~/s2i-do288-httpd/test/test-app/
+[student@workstation s2i-do288-httpd]$ mkdir /home/student/s2i-sample-app
+[student@workstation s2i-do288-httpd]$ s2i build test/test-app/  s2i-do288-httpd s2i-sample-app  --as-dockerfile ~/s2i-sample-app/Dockerfile
+[student@workstation s2i-do288-httpd]$ cd ~/s2i-sample-app
+[student@workstation s2i-sample-app]$ tree .
+[student@workstation s2i-sample-app]$ cat Dockerfile
+.......
+FROM s2i-do288-httpd     --------------------------------------> 1)
+LABEL "io.k8s.display-name"="s2i-sample-app" \  ---------------> 2)
+ "io.openshift.s2i.build.image"="s2i-do288-httpd" \
+ "io.openshift.s2i.build.source-location"="test/test-app/"
+
+USER root
+# Copying in source code
+COPY upload/src /tmp/src --------------------------------------> 3)
+# Change file ownership to the assemble user. Builder image must support chown
+ command.
+RUN chown -R 1001:0 /tmp/src
+USER 1001
+# Assemble script sourced from builder image based on user input or image
+ metadata.
+# If this file does not exist in the image, the build will fail.
+RUN /usr/libexec/s2i/assemble
+# Run script sourced from builder image based on user input or image metadata.
+# If this file does not exist in the image, the build will fail.
+CMD /usr/libexec/s2i/run
+.......
+
+[student@workstation s2i-sample-app]$ sudo podman build  --format docker -t s2i-sample-app .
+[student@workstation s2i-sample-app]$ sudo podman images
+[student@workstation s2i-sample-app]$ sudo podman run --name test -u 1234  -p 8080:8080 -d s2i-sample-app
+[student@workstation s2i-sample-app]$ sudo podman ps
+[student@workstation s2i-sample-app]$ curl http://localhost:8080
+[student@workstation s2i-sample-app]$ sudo podman stop test
+
+5.- Upload to QUAIO
+--------
+[student@workstation s2i-sample-app]$ source /usr/local/etc/ocp4.config
+[student@workstation s2i-sample-app]$ sudo podman login  -u ${RHT_OCP4_QUAY_USER} quay.io
+[student@workstation s2i-sample-app]$ sudo skopeo copy  containers-storage:localhost/s2i-do288-httpd  docker://quay.io/${RHT_OCP4_QUAY_USER}/s2i-do288-httpd
+
+6.- Deploy into OpenShift Project
+--------
+[student@workstation s2i-sample-app]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation s2i-sample-app]$ oc new-project  ${RHT_OCP4_DEV_USER}-apache-s2i
+[student@workstation s2i-sample-app]$ podman login  -u ${RHT_OCP4_QUAY_USER} quay.io
+[student@workstation s2i-sample-app]$ oc create secret generic quayio  --from-file .dockerconfigjson=${XDG_RUNTIME_DIR}/containers/auth.json  --type=kubernetes.io/dockerconfigjson
+[student@workstation s2i-sample-app]$ oc secrets link builder quayio
+[student@workstation s2i-sample-app]$ oc import-image s2i-do288-httpd  --from quay.io/${RHT_OCP4_QUAY_USER}/s2i-do288-httpd --confirm
+[student@workstation s2i-sample-app]$ oc get is
+
+7.- Verify S2I Image
+--------
+[student@workstation s2i-sample-app]$ oc new-app --as-deployment-config  --name hello-s2i  s2i-do288-httpd~https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps  --context-dir=html-helloworld
+[student@workstation s2i-sample-app]$ oc logs -f bc/hello-s2i
+[student@workstation s2i-sample-app]$ oc get pods
+[student@workstation s2i-sample-app]$ oc expose svc hello-s2i
+[student@workstation s2i-sample-app]$ oc get route/hello-s2i  -o jsonpath='{.spec.host}{"\n"}'
+[student@workstation s2i-sample-app]$ curl  http://hello-s2i-${RHT_OCP4_DEV_USER}-apache-s2i.${RHT_OCP4_WILDCARD_DOMAIN}
+
+8.- Delete Project
+--------
+[student@workstation s2i-sample-app]$ oc delete project  ${RHT_OCP4_DEV_USER}-apache-s2i
+[student@workstation s2i-sample-app]$ sudo podman rm test
+[student@workstation s2i-sample-app]$ sudo podman rmi -f localhost/s2i-sample-app  localhost/s2i-do288-httpd  registry.access.redhat.com/ubi8/ubi:8.0
+[student@workstation s2i-sample-app]$ sudo skopeo delete  docker://quay.io/${RHT_OCP4_QUAY_USER}/s2i-do288-httpd:latest
+Firefox -> https://quay.io/user/andepiel45
+..... Delete Repository
+
+9.- Finish
+--------
+[student@workstation ~]$ lab apache-s2i finish
+
+
+----------
+LAB - Customizing Source-to-Image Builds
+----------
+
+##################
+# REQUIREMENTS
+#  - S2I Image Name: s2i-do288-go
+#  - QUAYO URl: quay.io/andepiel45/s2i-do288-go
+#  - IS Name: s2i-do288-go
+#  - App Name: greet
+#  - Project Name: ${RHT_OCP4_DEV_USER}-custom-s2i
+#  - Route: http://greet-${RHT_OCP4_DEV_USER}-custom-s2i.${RHT_OCP4_WILDCARD_DOMAIN}
+#  - GIT URL: https://github.com/CesarTest/DO288-apps 
+#  - Context Dir: go-hello-s2i
+#----------
+#  - S2I Working Folder: ~/DO288/labs/custom-s2i/test/testapp
+#  - Name App: s2i-go-app
+#  - Test Container: go-test
+#  - Test User ID: 1234
+#  - Port Bind: 8080 -> 8080
+#  - curl http://localhost:8080/user1 => Hello user1!. Welcome
+#  - Delete Test container: go-test
+#  - Test s2i-do288-go Image  
+#  - Commit + Push to GitHub
+##################
+
+
+0.- Start
+--------
+[student@workstation ~]$ lab custom-s2i start
+
+1.- Review S2I scripts
+-------- 
+[student@workstation ~]$ cd /home/student/DO288/labs/custom-s2i/s2i/bin
+[student@workstation bin]$ cat run
+[student@workstation bin]$ cat assemble
+[student@workstation bin]$ cat usage
+
+2.- Edit DockerFile -> Copy S2I scripts to image
+--------
+
+[student@workstation bin]$ cd ../..
+[student@workstation custom-s2i]$ vim ./Dockerfile
+.....
+COPY ./s2i/bin/ /usr/libexec/s2i  ----> TODO, ADD THIS LINE
+.....
+
+3.- Build S2I Image 
+--------
+[student@workstation custom-s2i]$ sudo podman build -t s2i-do288-go .
+[student@workstation custom-s2i]$ sudo podman images
+
+
+4.- Test Image + Assemble S2I Script
+--------
+[student@workstation custom-s2i]$ mkdir /home/student/s2i-go-app
+[student@workstation custom-s2i]$ s2i build test/test-app/ s2i-do288-go s2i-go-app  --as-dockerfile /home/student/s2i-go-app/Dockerfile
+[student@workstation custom-s2i]$ cd ~/s2i-go-app
+[student@workstation s2i-go-app]$ sudo podman build -t s2i-go-app 
+[student@workstation s2i-go-app]$ sudo podman images
+[student@workstation s2i-go-app]$ sudo podman run --name go-test -u 1234  -p 8080:8080 -d s2i-go-app
+[student@workstation s2i-go-app]$ sudo podman ps
+[student@workstation s2i-go-app]$ curl http://localhost:8080/user1
+[student@workstation s2i-go-app]$ sudo podman stop go-test
+[student@workstation s2i-go-app]$ cd ~
+
+5.- Push to QUAYO
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ sudo podman login  -u ${RHT_OCP4_QUAY_USER} quay.i
+[student@workstation ~]$ sudo skopeo copy  containers-storage:localhost/s2i-do288-go  docker://quay.io/${RHT_OCP4_QUAY_USER}/s2i-do288-go
+
+6.-  Create Image Stream for Build Image
+--------
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-custom-s2i
+[student@workstation ~]$ podman login -u ${RHT_OCP4_QUAY_USER} quay.io
+[student@workstation ~]$ oc create secret generic quayio  --from-file .dockerconfigjson=${XDG_RUNTIME_DIR}/containers/auth.json  --type=kubernetes.io/dockerconfigjson
+[student@workstation ~]$ oc secrets link builder quayio
+[student@workstation ~]$ oc import-image s2i-do288-go  --from quay.io/${RHT_OCP4_QUAY_USER}/s2i-do288-go  --confirm
+[student@workstation ~]$ oc get is
+
+7.- Git Master
+--------
+[student@workstation ~]$ cd DO288-apps
+[student@workstation DO288-apps]$ git checkout master
+
+8.- Create new branch
+--------
+[student@workstation DO288-apps]$ git checkout -b custom-s2i
+[student@workstation DO288-apps]$ git push -u origin custom-s2i
+
+9.- Deploy App
+--------
+[student@workstation ~]$ oc new-app --as-deployment-config --name greet s2i-do288-go~https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps#custom-s2i  --context-dir=go-hello
+[student@workstation ~]$ oc logs -f bc/greet
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ oc expose svc greet
+[student@workstation ~]$ oc get route/greet -o jsonpath='{.spec.host}{"\n"}'
+[student@workstation ~]$ curl  http://greet-${RHT_OCP4_DEV_USER}-custom-s2i.${RHT_OCP4_WILDCARD_DOMAIN}/user1
+
+10.- Change Run.es... to Spanish
+--------
+[student@workstation ~]$ mkdir -p ~/DO288-apps/go-hello/.s2i/bin
+[student@workstation ~]$ cp ~/DO288/labs/custom-s2i/s2i/bin/run  ~/DO288-apps/go-hello/.s2i/bin/
+[student@workstation ~]$ vim ~/DO288-apps/go-hello/.s2i/bin/run
+....
+...output omitted...
+echo "Starting app with lang option 'es'..."
+exec /opt/app-root/app --lang es       ------> CHANGE THIS LINE
+....
+
+[student@workstation ~]$ diff ~/DO288/solutions/custom-s2i/s2i/bin/run ~/DO288-apps/go-hello/.s2i/bin/run
+[student@workstation ~]$ cp ~/DO288/solutions/custom-s2i/s2i/bin/run ~/DO288-apps/go-hello/.s2i/bin/run
+[student@workstation ~]$ cd ~/DO288-apps/go-hello
+[student@workstation go-hello]$ git add .
+[student@workstation go-hello]$ git commit -m "Customized run script"
+[student@workstation go-hello]$ git push
+[student@workstation go-hello]$ cd ~
+
+11.- Restart Build
+--------
+Firefox  -> http://greet-${RHT_OCP4_DEV_USER}-custom-s2i.apps.cluster.domain.example.com/
+[student@workstation ~]$ oc start-build greet
+[student@workstation ~]$ oc logs -f bc/greet
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ curl  http://greet-${RHT_OCP4_DEV_USER}-custom-s2i.${RHT_OCP4_WILDCARD_DOMAIN}/user1
+
+12.- Grade Work
+--------
+[student@workstation ~]$ lab custom-s2i grade
+
+13.- Delete project
+--------
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-custom-s2i
+[student@workstation ~]$ sudo podman rm go-test
+[student@workstation ~]$ sudo podman rmi -f  localhost/s2i-go-app  localhost/s2i-do288-go  registry.access.redhat.com/ubi8/ubi:8.0
+[student@workstation ~]$ sudo skopeo delete  docker://quay.io/${RHT_OCP4_QUAY_USER}/s2i-do288-go:latest
+Firefox -> https://quay.io/user/andepiel45
+..... Delete Repository
+
+14.- Finish
+--------
+[student@workstation ~]$ lab custom-s2i grade
+[student@workstation ~]$ lab custom-s2i finish
+

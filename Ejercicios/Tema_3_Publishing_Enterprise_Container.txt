@@ -1,0 +1,235 @@
+=========================
+TEMA 3 - PUBLISHING ENTERPRISE CONTAINER IMAGES
+=========================
+
+----------
+GUIDED 1 - Using an Enterprise Registry
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab external-registry start
+
+
+1.- Push Image to Quaio with Skopeo
+-------
+[student@workstation ~]$ ls ~/DO288/labs/external-registry/ubi-sleep
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ podman login -u ${RHT_OCP4_QUAY_USER} quay.io
+[student@workstation ~]$ skopeo copy  oci:/home/student/DO288/labs/external-registry/ubi-sleep  docker://quay.io/${RHT_OCP4_QUAY_USER}/ubi-sleep:1.0
+[student@workstation ~]$ podman search quay.io/ubi-sleep
+[student@workstation ~]$ skopeo inspect  docker://quay.io/${RHT_OCP4_QUAY_USER}/ubi-sleep:1.0
+
+2.- Run from Quaio with Podman
+-------
+[student@workstation ~]$ sudo podman login -u ${RHT_OCP4_QUAY_USER} quay.io
+[student@workstation ~]$ sudo podman run -d --name sleep  quay.io/${RHT_OCP4_QUAY_USER}/ubi-sleep:1.0
+[student@workstation ~]$ sudo podman ps
+[student@workstation ~]$ sudo podman logs sleep
+[student@workstation ~]$ sudo podman stop sleep
+[student@workstation ~]$ sudo podman rm sleep
+
+3.- Deploy in OpenShift
+-------
+____ 3.1.- Desplegar, falla si el Registry es privado
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-external-registry
+[student@workstation ~]$ oc new-app --as-deployment-config --name sleep  --docker-image quay.io/${RHT_OCP4_QUAY_USER}/ubi-sleep:1.0 
+..... FALLA porque es registry privado
+
+____ 3.2.- Crear credenciales QUAIO en un Secret ----> ¡¡¡ A UNA SERVICE ACCOUNT !!! oc secret link SA=default SECRET=quayio
+[student@workstation ~]$ oc create secret generic quayio  --from-file .dockerconfigjson=${XDG_RUNTIME_DIR}/containers/auth.json  --type kubernetes.io/dockerconfigjson
+[student@workstation ~]$ oc secrets link default quayio --for pull
+
+____ 3.3.- Desplegar ahora
+[student@workstation ~]$ oc new-app --as-deployment-config --name sleep --docker-image quay.io/${RHT_OCP4_QUAY_USER}/ubi-sleep:1.0 
+[student@workstation ~]$ oc get pod
+[student@workstation ~]$ oc logs sleep-1-mmtf8
+
+4.- Delete project
+-------
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-external-registry
+[student@workstation ~]$ skopeo delete  docker://quay.io/${RHT_OCP4_QUAY_USER}/ubi-sleep:1.0
+Firefox ----> http://quay.io 
+
+5.- Finish
+--------
+[student@workstation ~]$ lab external-registry finish
+
+----------
+GUIDED 2 - Using the OpenShift Registry
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab expose-registry start
+
+1.-  Locate Registry Route (already exposed)
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc get route -n openshift-image-registry
+[student@workstation ~]$ INTERNAL_REGISTRY=$( oc get route default-route  -n openshift-image-registry -o jsonpath='{.spec.host}' )
+[student@workstation ~]$ echo ${INTERNAL_REGISTRY}
+
+2.- Create Project + Copy Image to Registry Local
+--------
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-common
+[student@workstation ~]$ TOKEN=$(oc whoami -t)
+[student@workstation ~]$ ls ~/DO288/labs/expose-registry/ubi-info
+[student@workstation ~]$ skopeo copy  --dest-creds=${RHT_OCP4_DEV_USER}:${TOKEN}  oci:/home/student/DO288/labs/expose-registry/ubi-info  docker://${INTERNAL_REGISTRY}/${RHT_OCP4_DEV_USER}-common/ubi-info:1.0
+[student@workstation ~]$ oc get is
+
+3.-Login to Registry + Pull Image to WorkStation
+--------
+# Si PODMAN no tiene activa la caché local... falla "namespace /proc/sys/run"
+# Hay que lanzar con sudo
+[student@workstation ~]$ sudo podman login -u ${RHT_OCP4_DEV_USER}  -p ${TOKEN} ${INTERNAL_REGISTRY}
+[student@workstation ~]$ sudo podman pull  ${INTERNAL_REGISTRY}/${RHT_OCP4_DEV_USER}-common/ubi-info:1.0
+[student@workstation ~]$ sudo podman run --name info  ${INTERNAL_REGISTRY}/${RHT_OCP4_DEV_USER}-common/ubi-info:1.0
+
+4.- Delete Project + Image Stream
+--------
+[student@workstation ~]$ oc delete is ubi-info
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-common
+[student@workstation ~]$ sudo podman rm info
+[student@workstation ~]$ sudo podman rmi -f  ${INTERNAL_REGISTRY}/${RHT_OCP4_DEV_USER}-common/ubi-info:1.0
+
+5.- Finish
+--------
+[student@workstation ~]$ lab expose-registry finish
+
+----------
+GUIDED 3 - Creating an Image Stream
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab image-stream start
+
+1.- Create Project
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-common
+
+2.- Import Image from Quaui
+--------
+[student@workstation ~]$ skopeo inspect docker://quay.io/redhattraining/hello-world-nginx
+.......
+{
+ "Name": "quay.io/redhattraining/hello-world-nginx",
+ "Tag": "latest",
+ "Digest": "sha256:4f4f...acc1",
+ "RepoTags": [
+ "latest"
+ ],
+...output omitted...
+
+[student@workstation ~]$ oc import-image hello-world --confirm  --from quay.io/redhattraining/hello-world-nginx 
+[student@workstation ~]$ oc get istag
+[student@workstation ~]$ oc describe is hello-world
+
+3.- Create Project
+--------
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-image-stream
+[student@workstation ~]$ oc new-app --as-deployment-config --name hello  -i ${RHT_OCP4_DEV_USER}-common/hello-world
+[student@workstation ~]$ oc get pod
+[student@workstation ~]$ oc expose svc hello
+[student@workstation ~]$ oc get route
+[student@workstation ~]$ curl  http://hello-${RHT_OCP4_DEV_USER}-image-stream.${RHT_OCP4_WILDCARD_DOMAIN}
+
+4.- Delete Project
+--------
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-image-stream
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-common
+
+5.- Finish
+--------
+[student@workstation ~]$ lab image-stream finish
+
+
+----------
+LAB - Publishing Enterprise Container Images
+----------
+
+
+
+
+###################
+# REQUIREMENTS
+#    OCI Manifest: /home/student/DO288/labs/expose-image/php-info
+#      Project IS: dgmhgy-common
+#    Project Apps: dgmhgy-expose-image
+# Image Stream: php-info 
+#    new-app Name:  info 
+#   Client Config: /usr/local/etc/ocp4.config 
+###################
+# OBJETIVOS
+#   Proyecto 1: centraliza la gestion de un Image Stream, cacheando en local
+#   Proyecto N: emplean las imagenes de Image Stream, pero le agregan sus capas
+###################
+
+
+0.- Start
+--------
+[student@workstation ~]$ lab expose-image start
+
+1.- Push the php-info OCI-formatted container image to Quay.io
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config  
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ podman login -u ${RHT_OCP4_QUAY_USER} quay.io
+[student@workstation ~]$ skopeo copy  oci:/home/student/DO288/labs/expose-image/php-info  docker://quay.io/${RHT_OCP4_QUAY_USER}/php-info:1.0
+[student@workstation ~]$ podman search quay.io/php-info 
+[student@workstation ~]$ skopeo inspect  docker://quay.io/${RHT_OCP4_QUAY_USER}/php-info:1.0
+
+2.- Crear Image Stream
+--------
+____ 2.1.- Crear Proyecto
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-common
+
+____ 2.2.- Crear credenciales QUAIO en un Secret ----> ¡¡¡ A UNA SERVICE ACCOUNT !!! oc secret link SA=default SECRET=quayio
+[student@workstation ~]$ oc create secret generic quayio  --from-file .dockerconfigjson=${XDG_RUNTIME_DIR}/containers/auth.json  --type kubernetes.io/dockerconfigjson
+[student@workstation ~]$ oc secrets link default quayio --for pull
+
+____ 2.3.- Crear Image Stream
+# OJO... --reference-policy: hace una cache local en el registry interno de la que tiran todos los demás proyectos
+[student@workstation ~]$ oc import-image php-info --confirm  --reference-policy local --from quay.io/${RHT_OCP4_QUAY_USER}/php-info:1.0 
+[student@workstation ~]$ oc get istag
+[student@workstation ~]$ oc describe is php-info 
+
+3.- Crear Aplicacion 
+--------
+____ 3.1.- Crear Proyecto
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-expose-image
+
+____ 3.2.- Agregar Permisos (para que pueda user IS sin problemas).
+[student@workstation ~]$ cat  /home/student/DO288/labs/expose-image/grant-puller-role.sh 
+[student@workstation ~]$ /home/student/DO288/labs/expose-image/grant-puller-role.sh 
+[student@workstation ~]$ oc policy add-role-to-group system:image-puller system:serviceaccounts:${RHT_OCP4_DEV_USER}-expose-image -n ${RHT_OCP4_DEV_USER}-common
+
+____ 3.3.- Desplegar aplicacion
+[student@workstation ~]$ oc new-app --as-deployment-config --name info  -i ${RHT_OCP4_DEV_USER}-common/php-info:1.0
+
+4.- Exponer la ruta 
+--------
+[student@workstation ~]$ oc get pod
+[student@workstation ~]$ oc expose svc info
+[student@workstation ~]$ oc get route
+[student@workstation ~]$ curl  http://info-${RHT_OCP4_DEV_USER}-expose-image.${RHT_OCP4_WILDCARD_DOMAIN}
+
+5.- Grade your work
+--------
+[student@workstation ~]$ lab expose-image grade
+
+6.- Delete Project
+--------
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-expose-image
+[student@workstation ~]$ oc delete project ${RHT_OCP4_DEV_USER}-common
+
+
+7.- Finish
+--------
+[student@workstation ~]$ lab expose-image finish

@@ -1,0 +1,449 @@
+=========================
+TEMA 6 - CREATING APPLICATIONS FROM OPENSHIFT TEMPLATES
+=========================
+
+######
+# RECURSOS PLANTILLAS
+# 1.- dc + secret
+# 2.- bc + dc
+# 3.- svc + route
+######
+
+
+----------
+GUIDED 1 - Creating a Multicontainer Template
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab create-template start
+
+1.- Create project
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc project ${RHT_OCP4_DEV_USER}-quotes-dev
+[student@workstation ~]$ oc status
+[student@workstation ~]$ oc get pvc
+[student@workstation ~]$ oc get route/quotesapi -o jsonpath='{.spec.host}{"\n"}'
+
+2.- Create Empty template
+--------
+[student@workstation ~]$ vim /home/student/quotes-template-clean.yaml 
+......
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+ name: quotes
+ annotations:
+    openshift.io/display-name: Quotes Application
+    description: The Quotes application provides an HTTP API that returns a random, funny quote.
+    iconClass: icon-php
+    tags: php,mysql
+objects:
+......
+
+[student@workstation ~]$ diff /home/student/quotes-template-clean.yaml  ~/DO288/solutions/create-template/new-template.yaml
+[student@workstation ~]$ cp ~/DO288/solutions/create-template/new-template.yaml /home/student/quotes-template-clean.yaml 
+
+
+3.- Export & Edit Resource
+--------
+[student@workstation ~]$ oc get -o yaml --export is > /tmp/is.yaml
+[student@workstation ~]$ cp /tmp/is.yaml /tmp/is-clean.yaml
+[student@workstation ~]$ vim /tmp/is-clean.yaml 
+.....
+apiVersion: v1    ----->  REMOVE LINE
+  items:          ----->  REMOVE LINE
+.....
+-apiVersion: image.openshift.io/v1   -------------------> REMOVE BLOCK (Image Stream)
+ kind: ImageStream      
+ metadata:
+   annotations:
+     openshift.io/image.dockerRepositoryCheck: "2019-06-21T02:54:22Z"
+     creationTimestamp: "2019-06-21T02:54:22Z"
+     generation: 2
+    name: quotesdb
+                                     -------------------> REMOVE BLOCK
+ ...output omitted
+......
+
+Remove the openshift.io/generated-by, creationTimestamp, generation,
+namespace, resourceVersion, selfLink, and uid attributes.
+Remove the managedFields, and status attributes including their child attributes
+......
+
+4.- Export & Edit Resource
+--------
+[student@workstation ~]$ oc get -o yaml --export bc > /tmp/bc.yaml
+[student@workstation ~]$ cp /tmp/bc.yaml /tmp/bc-clean.yaml
+[student@workstation ~]$ vim /tmp/bc-clean.yaml 
+.....
+apiVersion: v1   ----> REMOVE LINE
+items:           ----> REMOVE LINE
+
+4.4. Remove the openshift.io/generated-by, creationTimestamp, generation,
+namespace, resourceVersion, selfLink, and uid attributes.
+4.5. Remove the managedFields attribute and all its child attributes.
+4.6. Remove the namespace attribute that refers to the youruser-quotes-dev
+project. Do not remove the namespace: openshift reference under the
+sourceStrategy attribute lower down in the file.
+4.7. Remove the lastTriggeredImageID attribute under imageChange.
+4.8. Remove the status attribute and all its child attributes at the bottom of the file.
+4.9. Remove the kind: List attribute at the bottom of the file, and all other attributes
+under it.
+.....
+
+5.- Export & Edit Resource
+--------
+[student@workstation ~]$ oc get -o yaml --export dc > /tmp/dc.yaml
+[student@workstation ~]$ cp /tmp/dc.yaml /tmp/dc-clean.yaml
+[student@workstation ~]$ vim /tmp/dc-clean.yaml 
+......
+apiVersion: v1
+items:
+
+5.5. Remove all references to openshift.io/generated-by, creationTimestamp,
+generation, resourceVersion, selfLink, and uid attributes in the file.
+5.6. Remove the namespace attribute that refers to the youruser-quotes-dev
+project. Do not remove the namespace: openshift reference under the
+imageChangeParams attribute lower down in the file.
+5.7. Remove the managedFields attribute and all its child attributes.
+5.8. Remove all references to image and lastTriggeredImage attributes in the file.
+
+5.9. Remove the status attribute and all its child attributes for both deployment
+configuration resources.
+5.10. Remove the kind: List attribute at the bottom of the file, and all other attributes
+under it.
+......
+
+6.- Export & Edit Resource
+--------
+[student@workstation ~]$ oc get -o yaml --export svc > /tmp/svc.yaml
+[student@workstation ~]$ cp /tmp/svc.yaml /tmp/svc-clean.yaml
+[student@workstation ~]$ vim /tmp/svc-clean.yaml 
+.....
+apiVersion: v1
+items:
+
+6.5. Remove all references to openshift.io/generated-by, creationTimestamp,
+namespace, resourceVersion, selfLink, and uid attributes in the file.
+6.6. Remove the managedFields attribute and all its child attributes.
+6.7. Remove all references to the clusterIP attribute under the spec attribute in the
+file.
+6.8. Remove the status attribute and all its child attributes for both service resources.
+6.9. Remove the kind: List attribute at the bottom of the file, and all other attributes
+under it.
+......
+
+7.- Export & Edit Resource
+--------
+[student@workstation ~]$ oc get -o yaml --export route > /tmp/route.yaml
+[student@workstation ~]$ cp /tmp/route.yaml /tmp/route-clean.yaml
+[student@workstation ~]$ vim route-clean.yaml
+......
+apiVersion: v1
+items:
+
+7.5. Remove all references to openshift.io/generated-by, creationTimestamp,
+namespace, resourceVersion, selfLink, and uid attributes in the file.
+7.6. Remove the managedFields attribute and all its child attributes.
+7.7. Remove the host and subdomain attributes under the spec attribute.
+7.8. Remove the status attribute and all its child attributes.
+7.9. Remove the kind: List attribute at the bottom of the file, and all other attributes
+under it.
+......
+
+
+8.- Export & Edit Resource
+--------
+[student@workstation ~]$ oc get -o yaml --export pvc > /tmp/pvc.yaml
+[student@workstation ~]$ cp /tmp/pvc.yaml /tmp/pvc-clean.yaml
+[student@workstation ~]$ vim pvc-clean.yaml
+.....
+apiVersion: v1
+items:
+
+8.5. Remove all attributes under the metadata.annotations attribute.
+8.6. Remove all references to creationTimestamp, the finalizers attribute and
+its children, as well as the namespace, resourceVersion, selfLink, and uid
+attributes in the file.
+8.7. Remove the managedFields attribute and all its child attributes.
+8.8. Remove the dataSource attribute under the spec attribute.
+8.9. Remove the storageClassName, volumeMode, and volumeName attributes under
+the spec attribute.
+8.10. Remove the status attribute and all its child attributes.
+8.11. Remove the kind: List attribute at the bottom of the file, and all other attributes
+under it
+.....
+
+9.- Export & Edit Resource
+--------
+[student@workstation ~]$ cat /tmp/is-clean.yaml >> ~/quotes-template-clean.yaml
+[student@workstation ~]$ cat /tmp/bc-clean.yaml >> ~/quotes-template-clean.yaml
+[student@workstation ~]$ cat /tmp/dc-clean.yaml >> ~/quotes-template-clean.yaml
+[student@workstation ~]$ cat /tmp/svc-clean.yaml >> ~/quotes-template-clean.yaml
+[student@workstation ~]$ cat /tmp/route-clean.yaml >> ~/quotes-template-clean.yaml
+[student@workstation ~]$ cat /tmp/pvc-clean.yaml >> ~/quotes-template-clean.yaml
+
+10.- Export & Edit Resource
+--------
+[student@workstation ~]$ cat ~/DO288/labs/create-template/parameters.yaml
+......
+parameters:
+- name: APP_GIT_URL
+  displayName: Application Source Git URL
+  description: The Git URL of the application source code
+  required: true
+- name: PASSWORD
+  displayName: Database Password
+  description: Password to access the database
+  generate: expression
+  from: '[a-zA-Z0-9]{16}'
+- name: SECRET
+  displayName: Webhook Secret
+  description: Secret for webhooks
+  generate: expression
+  from: '[a-zA-Z0-9]{40}'
+.......
+
+[student@workstation ~]$ cp ~/quotes-template-clean.yaml ~/quotes-template.yaml
+[student@workstation ~]$ vim ~/quotes-template.yaml 
+.....
+_____ ADD parameters BLOCK at the end 
+.....
+____ CHANGE RESOURCES DEFINITION
+...output omitted...
+ kind: BuildConfig
+ ...output omitted...
+ name: quotesapi
+ ...output omitted...
+ source:
+ contextDir: quotes
+ git:
+ uri: ${APP_GIT_URL}
+ type: Git
+ ...output omitted...
+ triggers:
+ - github:
+ secret: ${SECRET}
+ type: GitHub
+ - generic:
+ secret: ${SECRET}
+ ...output omitted...
+ kind: DeploymentConfig
+ ...output omitted...
+ name: quotesapi
+ ...output omitted...
+ - name: DATABASE_PASSWORD
+ value: ${PASSWORD}
+ ...output omitted...
+ kind: DeploymentConfig
+ ...output omitted...
+ name: quotesdb
+ ...output omitted...
+ - name: MYSQL_PASSWORD
+ value: ${PASSWORD}
+ ...output omitted...
+---------------------
+________ ADD DATABASE VOLUME
+...output omitted...
+ terminationMessagePath: /dev/termination-log
+ terminationMessagePolicy: File
+ volumeMounts:
+ - mountPath: /var/lib/mysql/data
+   name: quotesdb-volume-1
+   dnsPolicy: ClusterFirst
+   restartPolicy: Always
+...output omitted
+
+
+[student@workstation ~]$ diff ~/quotes-template.yaml ~/DO288/solutions/create-template/quotes-template.yaml 
+[student@workstation ~]$ cp ~/DO288/solutions/create-template/quotes-template.yaml  ~/quotes-template.yaml
+
+
+11.- Create Project
+--------
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-myquotes
+
+12.- Deploy Application
+--------
+[student@workstation ~]$ oc new-app --file=quotes-template.yaml  -p APP_GIT_URL=https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps  -p PASSWORD=mypass
+[student@workstation ~]$ oc get pods
+
+13.- Test Application
+--------
+[student@workstation ~]$ cat ~/DO288/labs/create-template/populate-db.sh
+[student@workstation ~]$ ~/DO288/labs/create-template/populate-db.sh
+[student@workstation ~]$ oc get route/quotesapi -o jsonpath='{.spec.host}{"\n"}'
+[student@workstation ~]$ curl quotesapi-${RHT_OCP4_DEV_USER}-myquotes.${RHT_OCP4_WILDCARD_DOMAIN}/get.php
+
+14.- Finish
+--------
+[student@workstation ~]$ lab create-template finish
+
+----------
+LAB - Customizing Source-to-Image Builds
+----------
+
+0.- Start
+--------
+[student@workstation ~]$ lab review-template start
+
+1.- Customize Template
+--------
+[student@workstation ~]$ cp ~/DO288/labs/review-template/todo-template.yaml ~/todo-template.yaml
+[student@workstation ~]$ vim ~/todo-template.yaml
+
+____ 1.1.- Add Parameters
+.....
+-
+ name: PASSWORD
+ displayName: Database Password
+ description: Password to access the database
+ generate: expression
+ from: '[a-zA-Z0-9]{16}'
+- name: CLEAN_DATABASE
+ displayName: Initialize the database
+ description: If 'true', the database is cleaned when the application starts.
+ required: true
+ value: "true"
+.......
+
+
+____ 1.2.- Add Secret
+...output omitted...
+ kind: BuildConfig
+ ...output omitted...
+ name: todoapp
+ ...output omitted...
+ triggers:
+ - github:
+      secret: ${SECRET} ----- > ADD THIS
+   type: GitHub
+ - generic:
+      secret: ${SECRET} ------ > ADD THIS
+	 
+ ...output omitted...
+ kind: DeploymentConfig
+ ...output omitted...
+ name: todoapp
+
+____ 1.3.- Environment Variables, Database
+ ...output omitted...
+ - env:
+ - name: DATABASE_NAME
+ value: tododb
+ - name: DATABASE_PASSWORD
+   value: ${PASSWORD} --------------------> ADD THIS
+ - name: DATABASE_SVC
+   value: tododb
+ - name: DATABASE_USER
+   value: todoapp
+ - name: DATABASE_INIT
+   value: ${CLEAN_DATABASE} --------------> ADD THIS
+...output omitted
+
+____ 1.4.-  BuildConfig Environments Variables => Dependencies
+...output omitted...
+ kind: BuildConfig
+ ...output omitted...
+   name: todoapp
+ ...output omitted...
+   strategy:
+     sourceStrategy:
+       env:
+       - name: npm_config_registry
+         value: http://INVALIDHOST.NODOMAIN.NUL  ------> ADD THIS
+ ...output omitted...
+ kind: DeploymentConfig
+ ...output omitted...
+   name: tododb
+ ...output omitted...
+   - env:
+     - name: MYSQL_DATABASE
+       value: tododb
+     - name: MYSQL_PASSWORD
+       value: FIXEDPASSWD                 ------> ADD THIS
+...output omitted...
+ kind: Route
+ ...output omitted...
+ name: todoapp
+ ...output omitted...
+ spec:
+   host: http://INVALIDHOST.NODOMAIN.NUL  ------> ADD THIS
+...output omitted...
+
+____ 1.5.-  Adding the missing references
+...output omitted...
+ kind: BuildConfig
+ ...output omitted...
+ name: todoapp
+ ...output omitted...
+ strategy:
+   sourceStrategy:
+     env:
+     - name: npm_config_registry
+       value: ${NPM_PROXY}     ------> ADD THIS
+ ...output omitted...
+ 
+ kind: DeploymentConfig
+ ...output omitted...
+   name: tododb
+ ...output omitted...
+   - env:
+     - name: MYSQL_DATABASE
+       value: tododb
+     - name: MYSQL_PASSWORD
+       value: ${PASSWORD}     ------> ADD THIS
+...output omitted...
+ 
+ kind: Route
+ ...output omitted...
+    name: todoapp
+ ...output omitted...
+ spec:
+    host: ${HOSTNAME}   ------> ADD THIS
+...output omitted...
+
+____ 1.6.-  Verify results
+[student@workstation ~]$ diff ~/DO288/solutions/review-template/todo-template.yaml ~/todo-template.yaml
+[student@workstation ~]$ cp ~/DO288/solutions/review-template/todo-template.yaml ~/todo-template.yaml
+
+2.- Customize Deployment
+--------
+[student@workstation ~]$ cp ~/DO288/labs/review-template/oc-new-app.sh  ~/oc-new-app.sh
+[student@workstation ~]$ vim ~/oc-new-app.sh 
+.....
+oc new-app --as-deployment-config --name todo --file ~/todo-template.yaml \
+> -p APP_GIT_URL=https://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps \
+> -p NPM_PROXY=http://${RHT_OCP4_NEXUS_SERVER}/repository/nodejs \
+> -p PASSWORD=mypass \
+> -p CLEAN_DATABASE=true \                                        -----> ADD THIS
+> -p HOSTNAME=${RHT_OCP4_DEV_USER}-todo.${RHT_OCP4_WILDCARD_DOMAIN} ---> ADD THIS
+
+.....
+
+[student@workstation ~]$ diff ~/DO288/solutions/review-template/oc-new-app.sh ~/oc-new-app.sh
+[student@workstation ~]$ cp ~/DO288/solutions/review-template/oc-new-app.sh ~/oc-new-app.sh
+
+3.- Deploy App
+--------
+[student@workstation ~]$ source /usr/local/etc/ocp4.config
+[student@workstation ~]$ oc login -u ${RHT_OCP4_DEV_USER}  -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+[student@workstation ~]$ oc new-project ${RHT_OCP4_DEV_USER}-review-template
+[student@workstation ~]$ ~/oc-new-app.sh
+[student@workstation ~]$ oc logs bc/todoapp -f
+[student@workstation ~]$ oc get pods
+[student@workstation ~]$ oc get route/todoapp -o jsonpath='{.spec.host}{"\n"}'
+Firefox -> http://dgmhgy-todo.eu45.prod.nextcle.com/todo/index.html
+
+[student@workstation ~]$ curl -siw "\n"  http://${RHT_OCP4_DEV_USER}-todo.${RHT_OCP4_WILDCARD_DOMAIN}/todo/api/items-count
+
+4.- Grade Work
+--------
+[student@workstation ~]$ lab review-template grade
+
+5.- Finish
+--------
+[student@workstation ~]$ lab review-template finish
